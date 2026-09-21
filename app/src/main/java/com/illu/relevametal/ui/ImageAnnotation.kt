@@ -1,6 +1,8 @@
 package com.illu.relevametal.ui
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.graphics.Paint
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -31,8 +33,9 @@ import kotlin.math.sin
 @Composable
 fun rememberPhotoBitmap(
     path: String,
-    maxSide: Int = 1800
-): State<ImageBitmap?> = produceState<ImageBitmap?>(null, path, maxSide) {
+    maxSide: Int = 1800,
+    rotationDegrees: Int = 0
+): State<ImageBitmap?> = produceState<ImageBitmap?>(null, path, maxSide, rotationDegrees) {
     value = withContext(Dispatchers.IO) {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, bounds)
@@ -42,7 +45,17 @@ fun rememberPhotoBitmap(
             sample *= 2
         }
         val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
-        BitmapFactory.decodeFile(path, options)?.asImageBitmap()
+        val source = BitmapFactory.decodeFile(path, options) ?: return@withContext null
+        val rotation = ((rotationDegrees % 360) + 360) % 360
+        val displayBitmap = if (rotation == 0) {
+            source
+        } else {
+            val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+            Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true).also {
+                if (it !== source) source.recycle()
+            }
+        }
+        displayBitmap.asImageBitmap()
     }
 }
 

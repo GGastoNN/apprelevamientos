@@ -772,16 +772,26 @@ fun EvidenceEditorScreen(
     }
 
     val ev = item ?: return
-    val bitmapState = rememberPhotoBitmap(ev.filePath, maxSide = 1800)
+    val bitmapState = rememberPhotoBitmap(ev.filePath, maxSide = 1800, rotationDegrees = ev.rotationDegrees)
     val sourceSizeState = rememberPhotoDimensions(ev.filePath)
     val bitmap = bitmapState.value
     val sourceSize = sourceSizeState.value
-    val detections = remember(ev.detectedJson, sourceSize) {
-        if (sourceSize == null) emptyList() else AnnotationCodec.parseDetections(
-            ev.detectedJson,
-            sourceSize.width,
-            sourceSize.height
-        )
+    val detections = remember(ev.detectedJson, sourceSize, ev.rotationDegrees) {
+        if (sourceSize == null) {
+            emptyList()
+        } else {
+            AnnotationCodec.rotateDetections(
+                AnnotationCodec.parseDetections(
+                    ev.detectedJson,
+                    sourceSize.width,
+                    sourceSize.height
+                ),
+                ev.rotationDegrees
+            )
+        }
+    }
+    val displayMeasurements = remember(measurements, ev.rotationDegrees) {
+        AnnotationCodec.rotateMeasurements(measurements, ev.rotationDegrees)
     }
 
     fun persist(logChange: Boolean = false) {
@@ -791,6 +801,17 @@ fun EvidenceEditorScreen(
         )
         item = updated
         vm.saveEvidence(projectId, updated, logChange)
+    }
+
+    fun rotateBy(delta: Int) {
+        val updated = ev.copy(
+            caption = caption.trim(),
+            annotationJson = AnnotationCodec.encode(measurements),
+            rotationDegrees = AnnotationCodec.normalizeRotation(ev.rotationDegrees + delta)
+        )
+        item = updated
+        firstPoint = null
+        vm.saveEvidence(projectId, updated)
     }
 
     Scaffold(
@@ -821,12 +842,15 @@ fun EvidenceEditorScreen(
                     AnnotatedPhoto(
                         bitmap = bitmap,
                         detections = detections,
-                        measurements = measurements,
+                        measurements = displayMeasurements,
                         measurementMode = measurementMode,
                         firstPoint = firstPoint,
                         onFirstPoint = { firstPoint = it },
                         onMeasurePair = { a, b ->
-                            pendingPair = a to b
+                            val originalA = AnnotationCodec.inverseRotatePoint(a.x, a.y, ev.rotationDegrees)
+                            val originalB = AnnotationCodec.inverseRotatePoint(b.x, b.y, ev.rotationDegrees)
+                            pendingPair = Offset(originalA.first, originalA.second) to
+                                Offset(originalB.first, originalB.second)
                             firstPoint = null
                         },
                         modifier = Modifier.fillMaxSize()
@@ -861,6 +885,14 @@ fun EvidenceEditorScreen(
                         label = { Text("Deshacer") }
                     )
                     AssistChip(
+                        onClick = { rotateBy(-90) },
+                        label = { Text("Girar ↺") }
+                    )
+                    AssistChip(
+                        onClick = { rotateBy(90) },
+                        label = { Text("Girar ↻") }
+                    )
+                    AssistChip(
                         onClick = {
                             val updated = ev.copy(
                                 caption = caption,
@@ -882,7 +914,7 @@ fun EvidenceEditorScreen(
                     if (measurementMode) {
                         if (firstPoint == null) "Tocá el primer punto de la cota." else "Ahora tocá el segundo punto."
                     } else {
-                        "Detección automática: ${detections.size} candidato(s) · Cotas: ${measurements.size}"
+                        "Detección automática: ${detections.size} candidato(s) · Cotas: ${measurements.size} · Giro: ${ev.rotationDegrees}°"
                     },
                     style = MaterialTheme.typography.labelMedium
                 )
@@ -937,7 +969,7 @@ fun EvidenceEditorScreen(
 
 @Composable
 private fun EvidenceThumb(item: EvidenceEntity, onClick: () -> Unit) {
-    val bitmap by rememberPhotoBitmap(item.filePath, maxSide = 420)
+    val bitmap by rememberPhotoBitmap(item.filePath, maxSide = 420, rotationDegrees = item.rotationDegrees)
     ElevatedCard(
         Modifier
             .width(150.dp)
