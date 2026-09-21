@@ -1,5 +1,6 @@
 package com.illu.relevametal.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -13,7 +14,9 @@ data class ProjectEntity(
     val address: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
-    val notes: String = ""
+    val notes: String = "",
+    @ColumnInfo(defaultValue = "'EN_CURSO'") val status: String = "EN_CURSO",
+    @ColumnInfo(defaultValue = "''") val responsible: String = ""
 )
 
 @Entity(
@@ -28,7 +31,8 @@ data class SpaceEntity(
     val level: String = "",
     val sector: String = "",
     val notes: String = "",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = System.currentTimeMillis()
 )
 
 @Entity(
@@ -46,6 +50,20 @@ data class OpeningEntity(
     val sillMm: Int? = null,
     val diagonal1Mm: Int? = null,
     val diagonal2Mm: Int? = null,
+    val wallThicknessMm: Int? = null,
+    val depthMm: Int? = null,
+    val clearanceLeftMm: Int? = null,
+    val clearanceRightMm: Int? = null,
+    val clearanceTopMm: Int? = null,
+    val clearanceBottomMm: Int? = null,
+    @ColumnInfo(defaultValue = "'NO_VERIFICADO'") val plumbState: String = "NO_VERIFICADO",
+    @ColumnInfo(defaultValue = "'NO_VERIFICADO'") val levelState: String = "NO_VERIFICADO",
+    @ColumnInfo(defaultValue = "'NO_VERIFICADO'") val squareState: String = "NO_VERIFICADO",
+    @ColumnInfo(defaultValue = "'NO_VERIFICADO'") val floorState: String = "NO_VERIFICADO",
+    @ColumnInfo(defaultValue = "'NO_VERIFICADO'") val plasterState: String = "NO_VERIFICADO",
+    @ColumnInfo(defaultValue = "'NO_VERIFICADO'") val premarcoState: String = "NO_VERIFICADO",
+    @ColumnInfo(defaultValue = "''") val openingDirection: String = "",
+    @ColumnInfo(defaultValue = "''") val interference: String = "",
     val status: String = "PENDIENTE",
     val notes: String = "",
     val createdAt: Long = System.currentTimeMillis(),
@@ -64,7 +82,9 @@ data class EvidenceEntity(
     val caption: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val detectedJson: String = "",
-    val annotationJson: String = ""
+    val annotationJson: String = "",
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "0") val isPrimary: Boolean = false
 )
 
 @Entity(
@@ -78,5 +98,7 @@ data class EventEntity(
     val kind: String,
     val title: String,
     val detail: String = "",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val openingId: Long? = null,
+    @ColumnInfo(defaultValue = "'INFO'") val severity: String = "INFO"
 )
