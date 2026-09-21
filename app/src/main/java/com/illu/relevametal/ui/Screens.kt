@@ -1,0 +1,1341 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
+package com.illu.relevametal.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.illu.relevametal.annotation.AnnotationCodec
+import com.illu.relevametal.annotation.MeasurementAnnotation
+import com.illu.relevametal.data.EvidenceEntity
+import com.illu.relevametal.data.EventEntity
+import com.illu.relevametal.data.OpeningEntity
+import com.illu.relevametal.data.ProjectEntity
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.*
+
+private val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+
+@Composable
+fun ProjectsScreen(
+    vm: AppViewModel,
+    onOpen: (Long) -> Unit
+) {
+    val projects by vm.projects.collectAsState()
+    var query by remember { mutableStateOf("") }
+    var status by remember { mutableStateOf("TODAS") }
+    var newProject by remember { mutableStateOf(false) }
+
+    val filtered = remember(projects, query, status) {
+        projects.filter { project ->
+            val matchesStatus = status == "TODAS" || project.status == status
+            val q = query.trim()
+            val matchesQuery = q.isBlank() || listOf(
+                project.name,
+                project.client,
+                project.address,
+                project.responsible
+            ).any { it.contains(q, ignoreCase = true) }
+            matchesStatus && matchesQuery
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("Grupo IDEA", fontWeight = FontWeight.Bold)
+                        Text(
+                            "Relevamientos",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { newProject = true },
+                text = { Text("Nueva obra") },
+                icon = { Text("+") }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize(),
+            contentPadding = PaddingValues(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Buscar obra, cliente o dirección") }
+                )
+            }
+
+            item {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("TODAS", "EN_CURSO", "PAUSADA", "FINALIZADA").forEach { value ->
+                        FilterChip(
+                            selected = status == value,
+                            onClick = { status = value },
+                            label = { Text(statusLabel(value)) }
+                        )
+                    }
+                }
+            }
+
+            if (filtered.isEmpty()) {
+                item {
+                    EmptyState(
+                        title = if (projects.isEmpty()) "Todavía no hay obras" else "Sin resultados",
+                        text = if (projects.isEmpty()) {
+                            "Creá una obra y empezá a registrar espacios, vanos, fotos y cotas."
+                        } else {
+                            "Probá cambiando la búsqueda o el filtro."
+                        }
+                    )
+                }
+            } else {
+                items(items = filtered, key = { it.id }) { project ->
+                    ProjectCard(project = project, onClick = { onOpen(project.id) })
+                }
+            }
+
+            item { Spacer(Modifier.height(80.dp)) }
+        }
+    }
+
+    if (newProject) {
+        NewProjectDialog(
+            onDismiss = { newProject = false },
+            onSave = { name, client, address, responsible, notes ->
+                vm.addProject(name, client, address, responsible, notes) { id ->
+                    newProject = false
+                    onOpen(id)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun ProjectCard(project: ProjectEntity, onClick: () -> Unit) {
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        project.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (project.client.isNotBlank()) {
+                        Text(project.client, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                StatusBadge(project.status)
+            }
+            if (project.address.isNotBlank()) {
+                Text(
+                    project.address,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                "Actualizada ${dateFormat.format(Date(project.updatedAt))}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun ProjectScreen(
+    vm: AppViewModel,
+    projectId: Long,
+    onBack: () -> Unit,
+    onOpenSpace: (Long) -> Unit,
+    onSharePdf: (java.io.File) -> Unit
+) {
+    val spaces by vm.spaces(projectId).collectAsState(initial = emptyList())
+    val events by vm.events(projectId).collectAsState(initial = emptyList())
+    val stats by vm.projectStats(projectId).collectAsState(initial = ProjectStats())
+    var project by remember(projectId) { mutableStateOf<ProjectEntity?>(null) }
+    var tab by remember { mutableIntStateOf(0) }
+    var showSpaceDialog by remember { mutableStateOf(false) }
+    var showEventDialog by remember { mutableStateOf(false) }
+    var exporting by remember { mutableStateOf(false) }
+    var exportError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(projectId) { project = vm.project(projectId) }
+    val p = project
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(p?.name ?: "Obra", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        p?.client?.takeIf { it.isNotBlank() }?.let {
+                            Text(it, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                },
+                navigationIcon = {
+                    TextButton(onClick = onBack) { Text("←") }
+                },
+                actions = {
+                    TextButton(
+                        enabled = !exporting,
+                        onClick = {
+                            exporting = true
+                            vm.exportProject(projectId) { result ->
+                                exporting = false
+                                result.onSuccess(onSharePdf)
+                                    .onFailure { exportError = it.message ?: "No se pudo generar el PDF" }
+                            }
+                        }
+                    ) {
+                        Text(if (exporting) "Generando…" else "PDF")
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { if (tab == 0) showSpaceDialog = true else showEventDialog = true },
+                text = { Text(if (tab == 0) "Nuevo espacio" else "Nueva nota") },
+                icon = { Text("+") }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+        ) {
+            ProjectStatsStrip(stats)
+            TabRow(selectedTabIndex = tab) {
+                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Espacios") })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Bitácora") })
+                Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Obra") })
+            }
+
+            when (tab) {
+                0 -> {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (spaces.isEmpty()) {
+                            item {
+                                EmptyState(
+                                    "Sin espacios cargados",
+                                    "Dividí la obra por planta, ambiente, fachada o sector para trabajar más rápido."
+                                )
+                            }
+                        }
+                        items(items = spaces, key = { it.id }) { space ->
+                            ElevatedCard(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onOpenSpace(space.id) }
+                            ) {
+                                Column(Modifier.padding(16.dp)) {
+                                    Text(space.name, fontWeight = FontWeight.SemiBold)
+                                    val context = listOf(space.level, space.sector)
+                                        .filter { it.isNotBlank() }
+                                        .joinToString(" · ")
+                                    if (context.isNotBlank()) {
+                                        Text(context, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    if (space.notes.isNotBlank()) {
+                                        Text(
+                                            space.notes,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        item { Spacer(Modifier.height(80.dp)) }
+                    }
+                }
+
+                1 -> Timeline(events)
+                else -> ProjectInfoEditor(
+                    project = p,
+                    onSave = {
+                        project = it
+                        vm.updateProject(it)
+                    }
+                )
+            }
+        }
+    }
+
+    if (showSpaceDialog) {
+        NewSpaceDialog(
+            onDismiss = { showSpaceDialog = false },
+            onSave = { name, level, sector, notes ->
+                vm.addSpace(projectId, name, level, sector, notes) { id ->
+                    showSpaceDialog = false
+                    onOpenSpace(id)
+                }
+            }
+        )
+    }
+
+    if (showEventDialog) {
+        NewEventDialog(
+            onDismiss = { showEventDialog = false },
+            onSave = { title, detail, severity ->
+                vm.addEvent(projectId, title, detail, severity)
+                showEventDialog = false
+            }
+        )
+    }
+
+    exportError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { exportError = null },
+            confirmButton = {
+                TextButton(onClick = { exportError = null }) { Text("Aceptar") }
+            },
+            title = { Text("No se pudo generar el informe") },
+            text = { Text(message) }
+        )
+    }
+}
+
+@Composable
+private fun ProjectStatsStrip(stats: ProjectStats) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        MetricCard("Espacios", stats.spaces.toString())
+        MetricCard("Vanos", stats.openings.toString())
+        MetricCard("Pendientes", stats.pending.toString())
+        MetricCard("Fotos", stats.photos.toString())
+    }
+}
+
+@Composable
+private fun MetricCard(label: String, value: String) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(label, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+fun SpaceScreen(
+    vm: AppViewModel,
+    projectId: Long,
+    spaceId: Long,
+    onBack: () -> Unit,
+    onOpenOpening: (Long) -> Unit
+) {
+    val openings by vm.openings(spaceId).collectAsState(initial = emptyList())
+    var spaceName by remember { mutableStateOf("Vanos") }
+    var showDialog by remember { mutableStateOf(false) }
+    var suggestedCode by remember { mutableStateOf("V01") }
+
+    LaunchedEffect(spaceId) { spaceName = vm.space(spaceId)?.name ?: "Vanos" }
+    LaunchedEffect(showDialog, openings.size) {
+        if (showDialog) suggestedCode = vm.nextOpeningCode(spaceId)
+    }
+
+    val completed = openings.count { it.status == "RELEVADO" || it.status == "APROBADO" }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(spaceName)
+                        Text(
+                            "$completed de ${openings.size} relevados",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                },
+                navigationIcon = { TextButton(onClick = onBack) { Text("←") } }
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { showDialog = true },
+                text = { Text("Nuevo vano") },
+                icon = { Text("+") }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            Modifier
+                .padding(padding)
+                .fillMaxSize(),
+            contentPadding = PaddingValues(14.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            if (openings.isEmpty()) {
+                item {
+                    EmptyState(
+                        "Sin vanos",
+                        "El código se propone automáticamente para cargar rápido durante el recorrido."
+                    )
+                }
+            }
+            items(items = openings, key = { it.id }) { opening ->
+                OpeningListCard(opening) { onOpenOpening(opening.id) }
+            }
+            item { Spacer(Modifier.height(80.dp)) }
+        }
+    }
+
+    if (showDialog) {
+        NewOpeningDialog(
+            initialCode = suggestedCode,
+            onDismiss = { showDialog = false },
+            onSave = { code, type ->
+                vm.addOpening(projectId, spaceId, code, type) { id ->
+                    showDialog = false
+                    onOpenOpening(id)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun OpeningListCard(opening: OpeningEntity, onClick: () -> Unit) {
+    ElevatedCard(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "${opening.code} · ${opening.type}",
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "${opening.widthMm ?: "—"} × ${opening.heightMm ?: "—"} mm",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (opening.notes.isNotBlank()) {
+                    Text(
+                        opening.notes,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            StatusBadge(opening.status)
+        }
+    }
+}
+
+@Composable
+fun OpeningScreen(
+    vm: AppViewModel,
+    projectId: Long,
+    openingId: Long,
+    onBack: () -> Unit,
+    onCamera: () -> Unit,
+    onEditEvidence: (Long) -> Unit
+) {
+    var opening by remember(openingId) { mutableStateOf<OpeningEntity?>(null) }
+    val evidence by vm.evidence(openingId).collectAsState(initial = emptyList())
+
+    LaunchedEffect(openingId) { opening = vm.opening(openingId) }
+    val o = opening ?: return
+
+    var code by remember(o.id, o.updatedAt) { mutableStateOf(o.code) }
+    var type by remember(o.id, o.updatedAt) { mutableStateOf(o.type) }
+    var width by remember(o.id, o.updatedAt) { mutableStateOf(o.widthMm?.toString().orEmpty()) }
+    var height by remember(o.id, o.updatedAt) { mutableStateOf(o.heightMm?.toString().orEmpty()) }
+    var sill by remember(o.id, o.updatedAt) { mutableStateOf(o.sillMm?.toString().orEmpty()) }
+    var d1 by remember(o.id, o.updatedAt) { mutableStateOf(o.diagonal1Mm?.toString().orEmpty()) }
+    var d2 by remember(o.id, o.updatedAt) { mutableStateOf(o.diagonal2Mm?.toString().orEmpty()) }
+    var wall by remember(o.id, o.updatedAt) { mutableStateOf(o.wallThicknessMm?.toString().orEmpty()) }
+    var depth by remember(o.id, o.updatedAt) { mutableStateOf(o.depthMm?.toString().orEmpty()) }
+    var left by remember(o.id, o.updatedAt) { mutableStateOf(o.clearanceLeftMm?.toString().orEmpty()) }
+    var right by remember(o.id, o.updatedAt) { mutableStateOf(o.clearanceRightMm?.toString().orEmpty()) }
+    var top by remember(o.id, o.updatedAt) { mutableStateOf(o.clearanceTopMm?.toString().orEmpty()) }
+    var bottom by remember(o.id, o.updatedAt) { mutableStateOf(o.clearanceBottomMm?.toString().orEmpty()) }
+    var status by remember(o.id, o.updatedAt) { mutableStateOf(o.status) }
+    var plumb by remember(o.id, o.updatedAt) { mutableStateOf(o.plumbState) }
+    var level by remember(o.id, o.updatedAt) { mutableStateOf(o.levelState) }
+    var square by remember(o.id, o.updatedAt) { mutableStateOf(o.squareState) }
+    var floor by remember(o.id, o.updatedAt) { mutableStateOf(o.floorState) }
+    var plaster by remember(o.id, o.updatedAt) { mutableStateOf(o.plasterState) }
+    var premarco by remember(o.id, o.updatedAt) { mutableStateOf(o.premarcoState) }
+    var direction by remember(o.id, o.updatedAt) { mutableStateOf(o.openingDirection) }
+    var interference by remember(o.id, o.updatedAt) { mutableStateOf(o.interference) }
+    var notes by remember(o.id, o.updatedAt) { mutableStateOf(o.notes) }
+    var savedFlash by remember { mutableStateOf(false) }
+
+    fun buildOpening(): OpeningEntity = o.copy(
+        code = code.trim().uppercase().ifBlank { o.code },
+        type = type.trim().uppercase().ifBlank { "VANO" },
+        widthMm = width.toIntOrNull(),
+        heightMm = height.toIntOrNull(),
+        sillMm = sill.toIntOrNull(),
+        diagonal1Mm = d1.toIntOrNull(),
+        diagonal2Mm = d2.toIntOrNull(),
+        wallThicknessMm = wall.toIntOrNull(),
+        depthMm = depth.toIntOrNull(),
+        clearanceLeftMm = left.toIntOrNull(),
+        clearanceRightMm = right.toIntOrNull(),
+        clearanceTopMm = top.toIntOrNull(),
+        clearanceBottomMm = bottom.toIntOrNull(),
+        status = status,
+        plumbState = plumb,
+        levelState = level,
+        squareState = square,
+        floorState = floor,
+        plasterState = plaster,
+        premarcoState = premarco,
+        openingDirection = direction.trim(),
+        interference = interference.trim(),
+        notes = notes.trim()
+    )
+
+    val draftSignature = listOf(
+        code, type, width, height, sill, d1, d2, wall, depth, left, right, top, bottom,
+        status, plumb, level, square, floor, plaster, premarco, direction, interference, notes
+    ).joinToString("\u001F")
+
+    LaunchedEffect(draftSignature) {
+        delay(900)
+        vm.saveOpeningDraft(projectId, buildOpening())
+    }
+
+    BackHandler {
+        vm.saveOpeningDraft(projectId, buildOpening())
+        onBack()
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(code.ifBlank { o.code })
+                        Text(type.ifBlank { "VANO" }, style = MaterialTheme.typography.labelMedium)
+                    }
+                },
+                navigationIcon = { TextButton(onClick = {
+                    val updated = buildOpening()
+                    vm.saveOpeningDraft(projectId, updated)
+                    onBack()
+                }) { Text("←") } },
+                actions = {
+                    TextButton(onClick = {
+                        val updated = buildOpening()
+                        opening = updated
+                        vm.saveOpening(projectId, updated)
+                        savedFlash = true
+                    }) { Text(if (savedFlash) "Guardado ✓" else "Guardar") }
+                }
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = onCamera,
+                text = { Text("Tomar foto") },
+                icon = { Text("●") }
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            Modifier
+                .padding(padding)
+                .fillMaxSize(),
+            contentPadding = PaddingValues(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                SectionCard("Estado") {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("PENDIENTE", "VERIFICAR", "RELEVADO", "APROBADO").forEach { value ->
+                            FilterChip(
+                                selected = status == value,
+                                onClick = { status = value; savedFlash = false },
+                                label = { Text(statusLabel(value)) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                SectionCard("Identificación") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = code,
+                            onValueChange = { code = it; savedFlash = false },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Código") },
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = type,
+                            onValueChange = { type = it; savedFlash = false },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Tipo") },
+                            singleLine = true
+                        )
+                    }
+                }
+            }
+
+            item {
+                SectionCard("Medidas principales · mm") {
+                    NumericPair("Ancho", width, { width = it; savedFlash = false }, "Alto", height, { height = it; savedFlash = false })
+                    NumericPair("Antepecho", sill, { sill = it; savedFlash = false }, "Espesor muro", wall, { wall = it; savedFlash = false })
+                    NumericPair("Diagonal 1", d1, { d1 = it; savedFlash = false }, "Diagonal 2", d2, { d2 = it; savedFlash = false })
+                    NumericPair("Profundidad", depth, { depth = it; savedFlash = false }, "Libre inferior", bottom, { bottom = it; savedFlash = false })
+                }
+            }
+
+            item {
+                SectionCard("Encuentros / holguras · mm") {
+                    NumericPair("Izquierda", left, { left = it; savedFlash = false }, "Derecha", right, { right = it; savedFlash = false })
+                    NumericPair("Superior", top, { top = it; savedFlash = false }, "Inferior", bottom, { bottom = it; savedFlash = false })
+                }
+            }
+
+            item {
+                SectionCard("Control del vano") {
+                    Text("Tocá cada control para pasar entre No verificado → OK → Observar.", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CheckChip("Plomo", plumb) { plumb = nextCheck(plumb); savedFlash = false }
+                        CheckChip("Nivel", level) { level = nextCheck(level); savedFlash = false }
+                        CheckChip("Escuadra", square) { square = nextCheck(square); savedFlash = false }
+                        CheckChip("Piso", floor) { floor = nextCheck(floor); savedFlash = false }
+                        CheckChip("Revoque", plaster) { plaster = nextCheck(plaster); savedFlash = false }
+                        CheckChip("Premarco", premarco) { premarco = nextCheck(premarco); savedFlash = false }
+                    }
+                }
+            }
+
+            item {
+                SectionCard("Condiciones de obra") {
+                    OutlinedTextField(
+                        value = direction,
+                        onValueChange = { direction = it; savedFlash = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Sentido / condición de apertura") }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = interference,
+                        onValueChange = { interference = it; savedFlash = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Interferencias / obstáculos") },
+                        minLines = 2
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it; savedFlash = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Comentarios / incidencias") },
+                        minLines = 3
+                    )
+                }
+            }
+
+            item {
+                SectionCard("Evidencia fotográfica · ${evidence.size}") {
+                    if (evidence.isEmpty()) {
+                        Text(
+                            "Todavía no hay fotos. La cámara detectará candidatos de vano automáticamente y luego podrás dibujar cotas sobre la imagen.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(items = evidence, key = { it.id }) { item ->
+                                EvidenceThumb(item) { onEditEvidence(item.id) }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        val updated = buildOpening()
+                        opening = updated
+                        vm.saveOpening(projectId, updated)
+                        savedFlash = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Guardar relevamiento")
+                }
+            }
+
+            item { Spacer(Modifier.height(80.dp)) }
+        }
+    }
+}
+
+@Composable
+fun EvidenceEditorScreen(
+    vm: AppViewModel,
+    projectId: Long,
+    evidenceId: Long,
+    onBack: () -> Unit,
+    onDeleted: () -> Unit
+) {
+    var item by remember(evidenceId) { mutableStateOf<EvidenceEntity?>(null) }
+    var caption by remember { mutableStateOf("") }
+    var measurementMode by remember { mutableStateOf(false) }
+    var firstPoint by remember { mutableStateOf<Offset?>(null) }
+    var pendingPair by remember { mutableStateOf<Pair<Offset, Offset>?>(null) }
+    var measurements by remember { mutableStateOf<List<MeasurementAnnotation>>(emptyList()) }
+    var showDelete by remember { mutableStateOf(false) }
+
+    LaunchedEffect(evidenceId) {
+        item = vm.evidenceItem(evidenceId)
+        caption = item?.caption.orEmpty()
+        measurements = AnnotationCodec.decode(item?.annotationJson.orEmpty())
+    }
+
+    val ev = item ?: return
+    val bitmapState = rememberPhotoBitmap(ev.filePath, maxSide = 1800)
+    val sourceSizeState = rememberPhotoDimensions(ev.filePath)
+    val bitmap = bitmapState.value
+    val sourceSize = sourceSizeState.value
+    val detections = remember(ev.detectedJson, sourceSize) {
+        if (sourceSize == null) emptyList() else AnnotationCodec.parseDetections(
+            ev.detectedJson,
+            sourceSize.width,
+            sourceSize.height
+        )
+    }
+
+    fun persist(logChange: Boolean = false) {
+        val updated = ev.copy(
+            caption = caption.trim(),
+            annotationJson = AnnotationCodec.encode(measurements)
+        )
+        item = updated
+        vm.saveEvidence(projectId, updated, logChange)
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Foto y cotas") },
+                navigationIcon = { TextButton(onClick = onBack) { Text("←") } },
+                actions = {
+                    TextButton(onClick = { persist(logChange = true) }) { Text("Guardar") }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            Modifier
+                .padding(padding)
+                .fillMaxSize()
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .background(Color.Black)
+            ) {
+                if (bitmap == null) {
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
+                } else {
+                    AnnotatedPhoto(
+                        bitmap = bitmap,
+                        detections = detections,
+                        measurements = measurements,
+                        measurementMode = measurementMode,
+                        firstPoint = firstPoint,
+                        onFirstPoint = { firstPoint = it },
+                        onMeasurePair = { a, b ->
+                            pendingPair = a to b
+                            firstPoint = null
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+
+            Column(
+                Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = measurementMode,
+                        onClick = {
+                            measurementMode = !measurementMode
+                            firstPoint = null
+                        },
+                        label = { Text(if (measurementMode) "Cota activa" else "Agregar cota") }
+                    )
+                    AssistChip(
+                        onClick = {
+                            if (measurements.isNotEmpty()) {
+                                measurements = measurements.dropLast(1)
+                                persist()
+                            }
+                        },
+                        enabled = measurements.isNotEmpty(),
+                        label = { Text("Deshacer") }
+                    )
+                    AssistChip(
+                        onClick = {
+                            val updated = ev.copy(
+                                caption = caption,
+                                annotationJson = AnnotationCodec.encode(measurements),
+                                isPrimary = true
+                            )
+                            item = updated
+                            vm.setPrimaryEvidence(projectId, updated)
+                        },
+                        label = { Text(if (ev.isPrimary) "Foto principal ✓" else "Usar de portada") }
+                    )
+                    AssistChip(
+                        onClick = { showDelete = true },
+                        label = { Text("Eliminar") }
+                    )
+                }
+
+                Text(
+                    if (measurementMode) {
+                        if (firstPoint == null) "Tocá el primer punto de la cota." else "Ahora tocá el segundo punto."
+                    } else {
+                        "Detección automática: ${detections.size} candidato(s) · Cotas: ${measurements.size}"
+                    },
+                    style = MaterialTheme.typography.labelMedium
+                )
+
+                OutlinedTextField(
+                    value = caption,
+                    onValueChange = { caption = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Comentario de esta foto") },
+                    minLines = 2
+                )
+            }
+        }
+    }
+
+    pendingPair?.let { pair ->
+        MeasurementDialog(
+            onDismiss = { pendingPair = null },
+            onSave = { label, value ->
+                measurements = measurements + MeasurementAnnotation(
+                    x1 = pair.first.x,
+                    y1 = pair.first.y,
+                    x2 = pair.second.x,
+                    y2 = pair.second.y,
+                    label = label,
+                    value = value
+                )
+                pendingPair = null
+                persist()
+            }
+        )
+    }
+
+    if (showDelete) {
+        AlertDialog(
+            onDismissRequest = { showDelete = false },
+            title = { Text("Eliminar fotografía") },
+            text = { Text("La imagen se eliminará de este relevamiento.") },
+            dismissButton = {
+                TextButton(onClick = { showDelete = false }) { Text("Cancelar") }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    vm.deleteEvidence(projectId, ev)
+                    showDelete = false
+                    onDeleted()
+                }) { Text("Eliminar") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun EvidenceThumb(item: EvidenceEntity, onClick: () -> Unit) {
+    val bitmap by rememberPhotoBitmap(item.filePath, maxSide = 420)
+    ElevatedCard(
+        Modifier
+            .width(150.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Column {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(110.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                bitmap?.let {
+                    androidx.compose.foundation.Image(
+                        bitmap = it,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                }
+                if (item.isPrimary) {
+                    Surface(
+                        modifier = Modifier.padding(6.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text("Principal", Modifier.padding(horizontal = 6.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+            Text(
+                if (item.caption.isBlank()) "Abrir / acotar" else item.caption,
+                modifier = Modifier.padding(10.dp),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun Timeline(events: List<EventEntity>) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (events.isEmpty()) {
+            item { EmptyState("Bitácora vacía", "Cada foto, cambio y observación importante puede quedar registrado con fecha y hora.") }
+        }
+        items(items = events, key = { it.id }) { event ->
+            Surface(
+                tonalElevation = 1.dp,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(Modifier.padding(14.dp)) {
+                    Box(
+                        Modifier
+                            .size(10.dp)
+                            .background(eventColor(event.severity), RoundedCornerShape(50))
+                            .align(Alignment.CenterVertically)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(event.title, fontWeight = FontWeight.SemiBold)
+                        if (event.detail.isNotBlank()) {
+                            Text(event.detail, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text(
+                            dateFormat.format(Date(event.createdAt)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(80.dp)) }
+    }
+}
+
+@Composable
+private fun ProjectInfoEditor(project: ProjectEntity?, onSave: (ProjectEntity) -> Unit) {
+    if (project == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
+    var client by remember(project.id, project.updatedAt) { mutableStateOf(project.client) }
+    var address by remember(project.id, project.updatedAt) { mutableStateOf(project.address) }
+    var responsible by remember(project.id, project.updatedAt) { mutableStateOf(project.responsible) }
+    var notes by remember(project.id, project.updatedAt) { mutableStateOf(project.notes) }
+    var status by remember(project.id, project.updatedAt) { mutableStateOf(project.status) }
+
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("EN_CURSO", "PAUSADA", "FINALIZADA").forEach { value ->
+                    FilterChip(
+                        selected = status == value,
+                        onClick = { status = value },
+                        label = { Text(statusLabel(value)) }
+                    )
+                }
+            }
+        }
+        item { OutlinedTextField(client, { client = it }, Modifier.fillMaxWidth(), label = { Text("Cliente") }) }
+        item { OutlinedTextField(address, { address = it }, Modifier.fillMaxWidth(), label = { Text("Dirección") }) }
+        item { OutlinedTextField(responsible, { responsible = it }, Modifier.fillMaxWidth(), label = { Text("Responsable / contacto") }) }
+        item { OutlinedTextField(notes, { notes = it }, Modifier.fillMaxWidth(), label = { Text("Observaciones generales") }, minLines = 4) }
+        item {
+            Button(
+                onClick = {
+                    onSave(project.copy(client = client, address = address, responsible = responsible, notes = notes, status = status))
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Guardar datos de obra") }
+        }
+    }
+}
+
+@Composable
+private fun NewProjectDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, String, String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var client by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
+    var responsible by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nueva obra") },
+        text = {
+            Column(
+                Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(name, { name = it }, label = { Text("Nombre de obra *") })
+                OutlinedTextField(client, { client = it }, label = { Text("Cliente") })
+                OutlinedTextField(address, { address = it }, label = { Text("Dirección") })
+                OutlinedTextField(responsible, { responsible = it }, label = { Text("Responsable / contacto") })
+                OutlinedTextField(notes, { notes = it }, label = { Text("Observaciones iniciales") }, minLines = 2)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = {
+            Button(
+                enabled = name.isNotBlank(),
+                onClick = { onSave(name, client, address, responsible, notes) }
+            ) { Text("Crear") }
+        }
+    )
+}
+
+@Composable
+private fun NewSpaceDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var level by remember { mutableStateOf("") }
+    var sector by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nuevo espacio / sector") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Nombre *") })
+                OutlinedTextField(level, { level = it }, label = { Text("Planta / nivel") })
+                OutlinedTextField(sector, { sector = it }, label = { Text("Sector / fachada") })
+                OutlinedTextField(notes, { notes = it }, label = { Text("Observaciones") }, minLines = 2)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = {
+            Button(enabled = name.isNotBlank(), onClick = { onSave(name, level, sector, notes) }) {
+                Text("Crear")
+            }
+        }
+    )
+}
+
+@Composable
+private fun NewOpeningDialog(
+    initialCode: String,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit
+) {
+    var code by remember(initialCode) { mutableStateOf(initialCode) }
+    var type by remember { mutableStateOf("VANO") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nuevo vano") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(code, { code = it }, label = { Text("Código") }, singleLine = true)
+                OutlinedTextField(type, { type = it }, label = { Text("Tipo (ventana, puerta, paño fijo…)") })
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = {
+            Button(enabled = code.isNotBlank(), onClick = { onSave(code, type) }) { Text("Crear y abrir") }
+        }
+    )
+}
+
+@Composable
+private fun NewEventDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, String, String) -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var detail by remember { mutableStateOf("") }
+    var severity by remember { mutableStateOf("INFO") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Registrar en bitácora") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("INFO", "ALERTA", "DECISION").forEach { value ->
+                        FilterChip(
+                            selected = severity == value,
+                            onClick = { severity = value },
+                            label = { Text(if (value == "DECISION") "Decisión" else value.lowercase().replaceFirstChar { it.uppercase() }) }
+                        )
+                    }
+                }
+                OutlinedTextField(title, { title = it }, label = { Text("Título *") })
+                OutlinedTextField(detail, { detail = it }, label = { Text("Detalle") }, minLines = 3)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = {
+            Button(enabled = title.isNotBlank(), onClick = { onSave(title, detail, severity) }) { Text("Registrar") }
+        }
+    )
+}
+
+@Composable
+private fun MeasurementDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit
+) {
+    var label by remember { mutableStateOf("Cota") }
+    var value by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nueva cota sobre foto") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(label, { label = it }, label = { Text("Nombre") })
+                OutlinedTextField(
+                    value,
+                    { value = it },
+                    label = { Text("Valor (ej. 1250 mm)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                )
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = {
+            Button(onClick = { onSave(label, value) }) { Text("Agregar") }
+        }
+    )
+}
+
+@Composable
+private fun NumericPair(
+    label1: String,
+    value1: String,
+    onValue1: (String) -> Unit,
+    label2: String,
+    value2: String,
+    onValue2: (String) -> Unit
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = value1,
+            onValueChange = { onValue1(it.filter { ch -> ch.isDigit() }) },
+            modifier = Modifier.weight(1f),
+            label = { Text(label1) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = value2,
+            onValueChange = { onValue2(it.filter { ch -> ch.isDigit() }) },
+            modifier = Modifier.weight(1f),
+            label = { Text(label2) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true
+        )
+    }
+}
+
+@Composable
+private fun CheckChip(label: String, state: String, onClick: () -> Unit) {
+    val suffix = when (state) {
+        "OK" -> "✓"
+        "OBSERVAR" -> "!"
+        else -> "—"
+    }
+    FilterChip(
+        selected = state == "OK",
+        onClick = onClick,
+        label = { Text("$label $suffix") }
+    )
+}
+
+private fun nextCheck(value: String): String = when (value) {
+    "NO_VERIFICADO" -> "OK"
+    "OK" -> "OBSERVAR"
+    else -> "NO_VERIFICADO"
+}
+
+@Composable
+private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun EmptyState(title: String, text: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(text, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun StatusBadge(status: String) {
+    val bg = when (status) {
+        "APROBADO" -> MaterialTheme.colorScheme.primaryContainer
+        "RELEVADO" -> MaterialTheme.colorScheme.secondaryContainer
+        "VERIFICAR", "PAUSADA" -> MaterialTheme.colorScheme.tertiaryContainer
+        "FINALIZADA" -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    Surface(shape = RoundedCornerShape(50), color = bg) {
+        Text(
+            statusLabel(status),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelSmall
+        )
+    }
+}
+
+private fun statusLabel(status: String): String = when (status) {
+    "TODAS" -> "Todas"
+    "EN_CURSO" -> "En curso"
+    "PAUSADA" -> "Pausada"
+    "FINALIZADA" -> "Finalizada"
+    "PENDIENTE" -> "Pendiente"
+    "VERIFICAR" -> "Verificar"
+    "RELEVADO" -> "Relevado"
+    "APROBADO" -> "Aprobado"
+    else -> status.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }
+}
+
+@Composable
+private fun eventColor(severity: String): Color = when (severity) {
+    "ALERTA" -> MaterialTheme.colorScheme.error
+    "DECISION" -> MaterialTheme.colorScheme.tertiary
+    else -> MaterialTheme.colorScheme.primary
+}
+
