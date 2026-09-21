@@ -1,26 +1,57 @@
-# Grupo IDEA - Relevamientos — V0.1
+# Grupo IDEA - Relevamientos — V0.5 Professional Daily
 
-Base Android nativa (Kotlin + Jetpack Compose) para relevamientos de obra orientados a carpintería metálica.
+Aplicación Android nativa, offline-first, para relevamientos de obra orientados a carpintería metálica.
 
-## Incluido en esta base
-- Obras, espacios/sectores y vanos.
-- Cotas básicas en milímetros.
-- Comentarios e incidencias por vano.
-- Captura de fotografías con CameraX en almacenamiento privado de la app.
-- Base de datos local Room (offline-first).
-- Registro de eventos por obra preparado para trazabilidad.
-- Detector offline experimental de vanos rectangulares (`OpeningDetector`).
-- Motor PDF sin librerías comerciales (`ReportPdf`) preparado para informe por obra.
-- GitHub Actions para generar APK debug.
+## Objetivo de esta versión
 
-## Próxima etapa
-1. Editor visual de fotografías: rectángulo/polígono del vano y cotas dibujadas.
-2. Confirmación/ajuste manual de las detecciones automáticas.
-3. Calibración por referencia conocida para convertir píxeles a mm.
-4. Pantalla Timeline: fotos, notas, modificaciones, problemas y visitas por fecha/hora.
-5. Exportación y compartir PDF desde la interfaz.
-6. Firma/aceptación de responsable de obra y checklist de condiciones del vano.
-7. Backup/sincronización opcional sin perder funcionamiento offline.
+Reducir al mínimo los pasos durante el recorrido diario de obra y dejar trazabilidad suficiente para reconstruir qué se midió, fotografió, observó o decidió.
 
-## Medición
-La detección de un vano en una fotografía no equivale a medirlo físicamente. Una cámara 2D no permite inferir milímetros absolutos con precisión sin una referencia de escala, información de profundidad o una medición ingresada por el usuario. Por eso el diseño usa cotas manuales/calibradas como fuente de verdad.
+## Flujo rápido
+
+1. Abrir obra.
+2. Entrar al espacio/sector.
+3. Crear vano con código sugerido automáticamente (`V01`, `V02`, ...).
+4. Cargar medidas y controles técnicos.
+5. Tomar foto.
+6. La app ejecuta detección offline de candidatos de vano.
+7. Dibujar cotas sobre la fotografía con dos toques y escribir el valor real.
+8. Agregar comentario de foto y marcar una imagen principal.
+9. Registrar incidencias/decisiones en Bitácora.
+10. Generar y compartir un PDF técnico completo.
+
+## Incluido
+
+- Dashboard de obras con búsqueda y filtros por estado.
+- Obras con cliente, dirección, responsable, observaciones y estado.
+- Espacios/sectores con planta, sector y notas.
+- Alta rápida de vanos con numeración sugerida.
+- Estados de vano: Pendiente, Verificar, Relevado y Aprobado.
+- Medidas principales y diagonales en milímetros.
+- Espesor de muro, profundidad y holguras laterales/superior/inferior.
+- Checklist rápido: plomo, nivel, escuadra, piso, revoque y premarco.
+- Sentido/condición de apertura, interferencias y observaciones.
+- Cámara CameraX con cuadrícula y flash Auto/On/Off.
+- Detector offline experimental de vanos rectangulares.
+- Editor fotográfico con candidatos detectados y cotas manuales sobre la imagen.
+- Comentarios por fotografía, imagen principal y deshacer última cota.
+- Bitácora cronológica por obra con notas, alertas y decisiones.
+- Registro automático de altas, fotos, mediciones y cambios de estado.
+- Informe PDF por obra con portada, resumen, espacios, fichas técnicas, todas las fotos con cotas y bitácora.
+- Base Room local y migración V0.1 → V0.5 preservando los datos existentes.
+- Funcionamiento sin Internet para relevamiento, cámara, base local y PDF.
+- GitHub Actions actualizado para generar APK debug.
+
+## Importante sobre las mediciones
+
+La detección del vano en una foto es una ayuda visual. Una fotografía 2D no permite deducir milímetros absolutos con precisión sin referencia de escala o profundidad. Las cotas ingresadas por el usuario son la fuente documental. Una siguiente etapa puede sumar calibración por referencia conocida y ARCore/Depth cuando el dispositivo sea compatible.
+
+## Build
+
+- Kotlin 2.0.21
+- Jetpack Compose / Material 3
+- Room 2.6.1
+- CameraX 1.4.1
+- compileSdk / targetSdk 35
+- Java 17
+- versionCode 2
+- versionName 0.5.0
