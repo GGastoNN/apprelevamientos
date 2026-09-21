@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.*
 import android.graphics.pdf.PdfDocument
 import com.illu.relevametal.annotation.AnnotationCodec
+import com.illu.relevametal.annotation.MeasurementAnnotation
 import com.illu.relevametal.data.*
 import java.io.File
 import java.io.FileOutputStream
@@ -380,7 +381,12 @@ class ReportPdf(private val context: Context) {
             return
         }
 
-        val annotated = renderAnnotations(source, evidence.annotationJson)
+        val rotated = rotateBitmap(source, evidence.rotationDegrees)
+        val displayAnnotations = AnnotationCodec.rotateMeasurements(
+            AnnotationCodec.decode(evidence.annotationJson),
+            evidence.rotationDegrees
+        )
+        val annotated = renderAnnotations(rotated, displayAnnotations)
         val maxW = pageWidth - margin * 2
         val maxH = 560f
         val scale = minOf(maxW / annotated.width, maxH / annotated.height)
@@ -401,7 +407,8 @@ class ReportPdf(private val context: Context) {
         val count = AnnotationCodec.decode(evidence.annotationJson).size
         canvas.drawText("Cotas dibujadas: $count", margin, y, smallPaint)
 
-        if (annotated !== source) annotated.recycle()
+        if (annotated !== rotated) annotated.recycle()
+        if (rotated !== source) rotated.recycle()
         source.recycle()
     }
 
@@ -419,8 +426,17 @@ class ReportPdf(private val context: Context) {
         return BitmapFactory.decodeFile(path, options)
     }
 
-    private fun renderAnnotations(source: Bitmap, raw: String): Bitmap {
-        val annotations = AnnotationCodec.decode(raw)
+    private fun rotateBitmap(source: Bitmap, degrees: Int): Bitmap {
+        val rotation = AnnotationCodec.normalizeRotation(degrees)
+        if (rotation == 0) return source
+        val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+        return Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+    }
+
+    private fun renderAnnotations(
+        source: Bitmap,
+        annotations: List<MeasurementAnnotation>
+    ): Bitmap {
         if (annotations.isEmpty()) return source
         val out = source.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(out)
