@@ -84,3 +84,11 @@ El informe incluye:
 - Compartir PDF mediante FileProvider.
 - Sin permisos de almacenamiento público.
 - Migración de base V1→V2 para preservar los relevamientos de la versión inicial.
+
+
+## Giro de fotografías — V0.6
+
+- Cada evidencia puede rotarse de a 90° desde el editor.
+- El giro es no destructivo: no vuelve a comprimir ni reemplaza el JPG original.
+- La orientación queda guardada en Room y se aplica a miniaturas, editor y PDF.
+- Detecciones automáticas y cotas se transforman con la fotografía, manteniendo su posición correcta.

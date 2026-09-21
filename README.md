@@ -1,4 +1,4 @@
-# Grupo IDEA - Relevamientos — V0.5 Professional Daily
+# Grupo IDEA - Relevamientos — V0.6 Professional Daily
 
 Aplicación Android nativa, offline-first, para relevamientos de obra orientados a carpintería metálica.
 
@@ -33,11 +33,11 @@ Reducir al mínimo los pasos durante el recorrido diario de obra y dejar trazabi
 - Cámara CameraX con cuadrícula y flash Auto/On/Off.
 - Detector offline experimental de vanos rectangulares.
 - Editor fotográfico con candidatos detectados y cotas manuales sobre la imagen.
-- Comentarios por fotografía, imagen principal y deshacer última cota.
+- Comentarios por fotografía, imagen principal, giro de 90° y deshacer última cota.
 - Bitácora cronológica por obra con notas, alertas y decisiones.
 - Registro automático de altas, fotos, mediciones y cambios de estado.
 - Informe PDF por obra con portada, resumen, espacios, fichas técnicas, todas las fotos con cotas y bitácora.
-- Base Room local y migración V0.1 → V0.5 preservando los datos existentes.
+- Base Room local y migraciones V0.1 → V0.5 → V0.6 preservando los datos existentes.
 - Funcionamiento sin Internet para relevamiento, cámara, base local y PDF.
 - GitHub Actions actualizado para generar APK debug.
 
@@ -53,5 +53,5 @@ La detección del vano en una foto es una ayuda visual. Una fotografía 2D no pe
 - CameraX 1.4.1
 - compileSdk / targetSdk 35
 - Java 17
-- versionCode 2
-- versionName 0.5.0
+- versionCode 3
+- versionName 0.6.0
