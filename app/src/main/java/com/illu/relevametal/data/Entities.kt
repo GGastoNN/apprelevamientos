@@ -85,7 +85,8 @@ data class EvidenceEntity(
     val annotationJson: String = "",
     @ColumnInfo(defaultValue = "0") val updatedAt: Long = System.currentTimeMillis(),
     @ColumnInfo(defaultValue = "0") val isPrimary: Boolean = false,
-    @ColumnInfo(defaultValue = "0") val rotationDegrees: Int = 0
+    @ColumnInfo(defaultValue = "0") val rotationDegrees: Int = 0,
+    @ColumnInfo(defaultValue = "'GENERAL'") val phase: String = "GENERAL"
 )
 
 @Entity(
