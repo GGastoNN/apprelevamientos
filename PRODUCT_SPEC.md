@@ -1,94 +1,71 @@
-# Grupo IDEA - Relevamientos — Especificación funcional V0.5
+# Grupo IDEA - Relevamientos — Especificación funcional V0.7
 
-## Principio de diseño
+## Principio
 
-La aplicación debe poder operarse con una mano, sin conexión y con la menor cantidad de pantallas posible. El flujo principal está optimizado para una visita de obra: entrar al sector, abrir el vano, medir, fotografiar, acotar y continuar.
+La aplicación prioriza velocidad de campo y trazabilidad: cada acción frecuente debe resolverse con pocos toques, funcionar sin Internet y mantener la evidencia original disponible.
 
 ## Jerarquía
 
 Obra → Espacio/Sector → Vano/Carpintería → Evidencias.
 
-La obra mantiene además una Bitácora transversal que registra hechos, cambios, incidencias y decisiones.
+La Bitácora de obra registra decisiones, incidencias, fotografías, altas y cambios relevantes.
 
-## Datos de obra
+## Vano
 
-- Nombre.
-- Cliente.
-- Dirección.
-- Responsable/contacto.
-- Estado: En curso / Pausada / Finalizada.
-- Observaciones generales.
-- Fecha de creación y última actualización.
+Incluye identificación, tipo, medidas, diagonales, espesores, profundidad, holguras, plomo, nivel, escuadra, piso, revoque, premarco, apertura, interferencias, estado y observaciones.
 
-## Datos del espacio
+### Duplicado rápido
 
-- Nombre.
-- Planta/nivel.
-- Sector/fachada.
-- Observaciones.
-
-## Datos del vano
-
-- Código.
-- Tipo.
-- Ancho y alto.
-- Antepecho.
-- Diagonales.
-- Espesor de muro.
-- Profundidad.
-- Holguras izquierda, derecha, superior e inferior.
-- Plomo.
-- Nivel.
-- Escuadra.
-- Estado de piso.
-- Estado de revoque.
-- Premarco.
-- Sentido/condición de apertura.
-- Interferencias.
-- Estado operativo.
-- Observaciones.
+La opción `Duplicar vano` copia la geometría y el tipo de una ficha existente para acelerar series repetitivas. El nuevo vano obtiene código automático y reinicia controles/estado para evitar asumir que dos ubicaciones fueron verificadas de la misma forma.
 
 ## Evidencia fotográfica
 
-- Archivo original en almacenamiento privado.
-- Fecha/hora.
-- Comentario individual.
-- Detecciones automáticas de candidatos de vano.
-- Cotas manuales con dos puntos, etiqueta y valor real.
-- Imagen principal por vano.
-- Eliminación controlada.
+Cada evidencia contiene:
 
-## Bitácora
+- JPG original privado;
+- fecha/hora;
+- comentario;
+- clasificación General / Inicial / Incidencia / Corrección / Final;
+- rotación no destructiva;
+- detecciones automáticas;
+- cotas;
+- marcas gráficas;
+- indicador de foto principal.
 
-Registra automáticamente creación de obra, espacios, vanos, fotos, mediciones y cambios de estado. Permite además cargar notas manuales clasificadas como Información, Alerta o Decisión.
+### Herramientas de anotación
 
-## PDF
+- Cota: dos puntos + etiqueta + valor.
+- Flecha: señalización dirigida.
+- Rectángulo: delimitar una zona.
+- Círculo/elipse: resaltar un punto o defecto.
+- Texto: pin con observación.
 
-El informe incluye:
+Las coordenadas se almacenan normalizadas respecto de la imagen y se transforman correctamente al girar la fotografía.
 
-- Portada profesional.
-- Datos generales de la obra.
-- Resumen cuantitativo.
-- Espacios y sectores.
-- Ficha técnica de cada vano.
-- Todas las fotografías disponibles.
-- Cotas dibujadas sobre las fotografías.
-- Comentarios de evidencia.
-- Bitácora cronológica completa.
-- Aclaración técnica sobre medición fotográfica.
+## Marca corporativa
 
-## Seguridad y persistencia
+Configuración persistente mediante preferencias locales:
 
-- Datos offline en Room.
-- Fotografías e informes dentro del almacenamiento privado de la app.
-- Compartir PDF mediante FileProvider.
-- Sin permisos de almacenamiento público.
-- Migración de base V1→V2 para preservar los relevamientos de la versión inicial.
+- nombre de empresa;
+- logo personalizado importado desde el dispositivo;
+- sello activado/desactivado;
+- fecha/hora opcional;
+- obra opcional;
+- sector opcional;
+- vano opcional.
 
+La foto original nunca se sobreescribe. Para compartir o incluir en PDF se genera una representación con sello y anotaciones.
 
-## Giro de fotografías — V0.6
+## Incidencias
 
-- Cada evidencia puede rotarse de a 90° desde el editor.
-- El giro es no destructivo: no vuelve a comprimir ni reemplaza el JPG original.
-- La orientación queda guardada en Room y se aplica a miniaturas, editor y PDF.
-- Detecciones automáticas y cotas se transforman con la fotografía, manteniendo su posición correcta.
+Desde cada vano se puede registrar rápidamente una incidencia con título, detalle y severidad Información / Alerta / Decisión. El evento queda asociado al vano y se incorpora a la bitácora del proyecto.
+
+## Exportación
+
+- PDF completo por obra.
+- JPG técnico individual para compartir desde Android.
+- Ambas salidas respetan rotación, anotaciones y marca configurada.
+
+## Persistencia
+
+Room schema 4 con migraciones 1→2, 2→3 y 3→4. La migración 3→4 agrega la etapa fotográfica sin eliminar datos previos.

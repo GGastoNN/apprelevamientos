@@ -1,49 +1,59 @@
-# Grupo IDEA - Relevamientos — V0.6 Professional Daily
+# Grupo IDEA - Relevamientos — V0.7 Professional Field
 
-Aplicación Android nativa, offline-first, para relevamientos de obra orientados a carpintería metálica.
+Aplicación Android nativa, offline-first, para relevamientos diarios de obra orientados a carpintería metálica.
 
-## Objetivo de esta versión
-
-Reducir al mínimo los pasos durante el recorrido diario de obra y dejar trazabilidad suficiente para reconstruir qué se midió, fotografió, observó o decidió.
-
-## Flujo rápido
+## Flujo de campo
 
 1. Abrir obra.
-2. Entrar al espacio/sector.
-3. Crear vano con código sugerido automáticamente (`V01`, `V02`, ...).
+2. Entrar al sector.
+3. Crear o duplicar un vano.
 4. Cargar medidas y controles técnicos.
-5. Tomar foto.
-6. La app ejecuta detección offline de candidatos de vano.
-7. Dibujar cotas sobre la fotografía con dos toques y escribir el valor real.
-8. Agregar comentario de foto y marcar una imagen principal.
-9. Registrar incidencias/decisiones en Bitácora.
-10. Generar y compartir un PDF técnico completo.
+5. Tomar fotografías.
+6. Clasificar la evidencia: Inicial / Incidencia / Corrección / Final.
+7. Girar la foto si hace falta.
+8. Agregar cotas, flechas, rectángulos, círculos o texto directamente sobre la imagen.
+9. Registrar una incidencia desde el vano cuando sea necesario.
+10. Compartir una foto técnica individual o generar el PDF completo de obra.
 
-## Incluido
+## Marca de empresa
 
-- Dashboard de obras con búsqueda y filtros por estado.
-- Obras con cliente, dirección, responsable, observaciones y estado.
-- Espacios/sectores con planta, sector y notas.
-- Alta rápida de vanos con numeración sugerida.
-- Estados de vano: Pendiente, Verificar, Relevado y Aprobado.
-- Medidas principales y diagonales en milímetros.
-- Espesor de muro, profundidad y holguras laterales/superior/inferior.
-- Checklist rápido: plomo, nivel, escuadra, piso, revoque y premarco.
-- Sentido/condición de apertura, interferencias y observaciones.
-- Cámara CameraX con cuadrícula y flash Auto/On/Off.
-- Detector offline experimental de vanos rectangulares.
-- Editor fotográfico con candidatos detectados y cotas manuales sobre la imagen.
-- Comentarios por fotografía, imagen principal, giro de 90° y deshacer última cota.
-- Bitácora cronológica por obra con notas, alertas y decisiones.
-- Registro automático de altas, fotos, mediciones y cambios de estado.
-- Informe PDF por obra con portada, resumen, espacios, fichas técnicas, todas las fotos con cotas y bitácora.
-- Base Room local y migraciones V0.1 → V0.5 → V0.6 preservando los datos existentes.
-- Funcionamiento sin Internet para relevamiento, cámara, base local y PDF.
-- GitHub Actions actualizado para generar APK debug.
+Desde `Marca` en la pantalla principal se puede:
 
-## Importante sobre las mediciones
+- editar el nombre de empresa;
+- importar un logo PNG/JPG desde el teléfono;
+- activar/desactivar el sello;
+- decidir si el sello muestra fecha/hora, obra, sector y código de vano.
 
-La detección del vano en una foto es una ayuda visual. Una fotografía 2D no permite deducir milímetros absolutos con precisión sin referencia de escala o profundidad. Las cotas ingresadas por el usuario son la fuente documental. Una siguiente etapa puede sumar calibración por referencia conocida y ARCore/Depth cuando el dispositivo sea compatible.
+El archivo fotográfico original se conserva sin modificar. La marca y las anotaciones se renderizan en la visualización, al compartir la foto y dentro del PDF.
+
+Si todavía no se cargó un logo gráfico, la app utiliza el wordmark `Grupo IDEA` como identificación visible.
+
+## Herramientas incluidas
+
+- Dashboard de obras con búsqueda y filtros.
+- Obra → espacio/sector → vano → evidencias.
+- Código de vano sugerido automáticamente.
+- Duplicado rápido de vanos repetitivos.
+- Estados Pendiente / Verificar / Relevado / Aprobado.
+- Ancho, alto, antepecho, diagonales, profundidad, espesor y holguras.
+- Checklist de plomo, nivel, escuadra, piso, revoque y premarco.
+- Interferencias, sentido de apertura y observaciones.
+- Cámara CameraX con cuadrícula y flash.
+- Detector offline de candidatos de vano.
+- Editor de evidencias con giro no destructivo.
+- Cotas manuales con valor real.
+- Flechas, rectángulos, círculos y notas de texto sobre fotografía.
+- Foto principal por vano.
+- Clasificación cronológica de fotos por etapa.
+- Incidencias rápidas vinculadas al vano y a la bitácora.
+- Bitácora automática y manual.
+- Compartir JPG técnico con marca y anotaciones.
+- PDF profesional con todas las evidencias, fichas y bitácora.
+- Funcionamiento offline para relevamiento, fotos, base local y PDF.
+
+## Medición fotográfica
+
+La detección automática ubica candidatos visuales de vano, pero no convierte por sí sola píxeles en milímetros confiables. Las cotas ingresadas por el operario son la referencia documental. Una etapa posterior puede sumar calibración por referencia conocida y ARCore/Depth en dispositivos compatibles.
 
 ## Build
 
@@ -53,5 +63,5 @@ La detección del vano en una foto es una ayuda visual. Una fotografía 2D no pe
 - CameraX 1.4.1
 - compileSdk / targetSdk 35
 - Java 17
-- versionCode 3
-- versionName 0.6.0
+- versionCode 4
+- versionName 0.7.0
