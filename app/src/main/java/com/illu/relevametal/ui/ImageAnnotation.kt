@@ -185,15 +185,15 @@ fun AnnotatedPhoto(
             markups.forEach { markup ->
                 val a = map(Offset(markup.x1, markup.y1))
                 val b = map(Offset(markup.x2, markup.y2))
-                val color = Color(0xFFFFD54F)
+                val markupColor = Color(0xFFFFD54F)
                 when (markup.type) {
                     "ARROW" -> {
-                        drawLine(color, a, b, 5f)
-                        drawArrowHead(a, b, color)
+                        drawLine(markupColor, a, b, 5f)
+                        drawArrowHead(a, b, markupColor)
                     }
                     "RECTANGLE" -> {
                         drawRect(
-                            color,
+                            markupColor,
                             topLeft = Offset(minOf(a.x, b.x), minOf(a.y, b.y)),
                             size = Size(kotlin.math.abs(b.x - a.x), kotlin.math.abs(b.y - a.y)),
                             style = Stroke(5f)
@@ -201,7 +201,7 @@ fun AnnotatedPhoto(
                     }
                     "CIRCLE" -> {
                         drawOval(
-                            color,
+                            markupColor,
                             topLeft = Offset(minOf(a.x, b.x), minOf(a.y, b.y)),
                             size = Size(kotlin.math.abs(b.x - a.x), kotlin.math.abs(b.y - a.y)),
                             style = Stroke(5f)
@@ -210,7 +210,7 @@ fun AnnotatedPhoto(
                     "TEXT" -> {
                         drawCircle(Color(0xFFD32F2F), radius = 14f, center = a)
                         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            color = android.graphics.Color.WHITE
+                            this.color = android.graphics.Color.WHITE
                             textSize = 31f
                             typeface = android.graphics.Typeface.DEFAULT_BOLD
                             setShadowLayer(5f, 0f, 0f, android.graphics.Color.BLACK)
