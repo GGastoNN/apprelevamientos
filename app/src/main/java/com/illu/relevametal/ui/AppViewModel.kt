@@ -1,17 +1,23 @@
 package com.illu.relevametal.ui
 
 import android.app.Application
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.illu.relevametal.branding.BrandingSettings
+import com.illu.relevametal.branding.BrandingStore
 import com.illu.relevametal.data.*
 import com.illu.relevametal.detection.OpeningDetector
 import com.illu.relevametal.pdf.ReportPdf
+import com.illu.relevametal.render.PhotoRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 
 data class ProjectStats(
     val spaces: Int = 0,
@@ -23,6 +29,8 @@ data class ProjectStats(
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     val db = AppDatabase.get(app)
     private val detector = OpeningDetector()
+    private val brandingStore = BrandingStore(app)
+    val branding = MutableStateFlow(brandingStore.load())
 
     val projects = db.projects()
         .observeProjects()
@@ -46,6 +54,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun space(id: Long) = db.spaces().get(id)
     suspend fun opening(id: Long) = db.openings().get(id)
     suspend fun evidenceItem(id: Long) = db.evidence().get(id)
+
+    fun updateBranding(settings: BrandingSettings) {
+        val normalized = settings.copy(companyName = settings.companyName.trim().ifBlank { "Grupo IDEA" })
+        brandingStore.save(normalized)
+        branding.value = normalized
+    }
+
+    fun importBrandLogo(uri: Uri, onReady: (Result<Unit>) -> Unit = {}) = viewModelScope.launch {
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                val dir = File(getApplication<Application>().filesDir, "branding").apply { mkdirs() }
+                val target = File(dir, "company_logo")
+                getApplication<Application>().contentResolver.openInputStream(uri).use { input ->
+                    requireNotNull(input) { "No se pudo leer el logo seleccionado" }
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(target.absolutePath, bounds)
+                require(bounds.outWidth > 0 && bounds.outHeight > 0) { "El archivo seleccionado no es una imagen válida" }
+                val updated = branding.value.copy(logoPath = target.absolutePath)
+                brandingStore.save(updated)
+                updated
+            }
+        }
+        result.onSuccess { branding.value = it }
+        onReady(result.map { Unit })
+    }
+
+    fun clearBrandLogo() {
+        branding.value.logoPath.takeIf { it.isNotBlank() }?.let { runCatching { File(it).delete() } }
+        val updated = branding.value.copy(logoPath = "")
+        brandingStore.save(updated)
+        branding.value = updated
+    }
 
     fun addProject(
         name: String,
@@ -151,6 +193,64 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             )
         )
         onCreated?.invoke(id)
+    }
+
+
+    fun duplicateOpening(
+        projectId: Long,
+        source: OpeningEntity,
+        onCreated: (Long) -> Unit
+    ) = viewModelScope.launch {
+        val code = nextOpeningCode(source.spaceId)
+        val id = db.openings().insert(
+            source.copy(
+                id = 0,
+                code = code,
+                status = "PENDIENTE",
+                plumbState = "NO_VERIFICADO",
+                levelState = "NO_VERIFICADO",
+                squareState = "NO_VERIFICADO",
+                floorState = "NO_VERIFICADO",
+                plasterState = "NO_VERIFICADO",
+                premarcoState = "NO_VERIFICADO",
+                interference = "",
+                notes = "",
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+        touchProject(projectId)
+        db.events().insert(
+            EventEntity(
+                projectId = projectId,
+                openingId = id,
+                kind = "OPENING_DUPLICATED",
+                title = "$code: vano duplicado",
+                detail = "Base copiada desde ${source.code}; controles reiniciados para nueva verificación."
+            )
+        )
+        onCreated(id)
+    }
+
+    fun addOpeningEvent(
+        projectId: Long,
+        openingId: Long,
+        title: String,
+        detail: String,
+        severity: String = "ALERTA"
+    ) = viewModelScope.launch {
+        val code = db.openings().get(openingId)?.code ?: "Vano"
+        db.events().insert(
+            EventEntity(
+                projectId = projectId,
+                openingId = openingId,
+                kind = "INCIDENCE",
+                title = "$code: ${title.trim()}",
+                detail = detail.trim(),
+                severity = severity
+            )
+        )
+        touchProject(projectId)
     }
 
 
@@ -321,7 +421,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     ReportPdf.SpaceBundle(space, openings)
                 }
                 val events = db.events().list(projectId)
-                ReportPdf(getApplication()).generate(project, spaces, events)
+                ReportPdf(getApplication()).generate(project, spaces, events, branding.value)
+            }
+        }
+        onReady(result)
+    }
+
+    fun exportEvidenceImage(
+        projectId: Long,
+        evidence: EvidenceEntity,
+        onReady: (Result<File>) -> Unit
+    ) = viewModelScope.launch {
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                val opening = db.openings().get(evidence.openingId) ?: error("Vano inexistente")
+                val space = db.spaces().get(opening.spaceId) ?: error("Espacio inexistente")
+                val project = db.projects().project(projectId) ?: error("Obra inexistente")
+                val bitmap = PhotoRenderer.render(
+                    evidence = evidence,
+                    project = project,
+                    space = space,
+                    opening = opening,
+                    branding = branding.value,
+                    maxSide = 2600
+                ) ?: error("No se pudo procesar la fotografía")
+                val dir = File(getApplication<Application>().filesDir, "shared_photos").apply { mkdirs() }
+                val out = File(dir, "GrupoIDEA_${opening.code}_${System.currentTimeMillis()}.jpg")
+                FileOutputStream(out).use { stream ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 93, stream)
+                }
+                bitmap.recycle()
+                out
             }
         }
         onReady(result)

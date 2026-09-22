@@ -14,6 +14,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,7 +28,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.illu.relevametal.annotation.AnnotationCodec
+import com.illu.relevametal.annotation.AnnotationTool
+import com.illu.relevametal.annotation.MarkupAnnotation
 import com.illu.relevametal.annotation.MeasurementAnnotation
+import com.illu.relevametal.branding.BrandingSettings
 import com.illu.relevametal.data.EvidenceEntity
 import com.illu.relevametal.data.EventEntity
 import com.illu.relevametal.data.OpeningEntity
@@ -46,6 +51,7 @@ fun ProjectsScreen(
     var query by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("TODAS") }
     var newProject by remember { mutableStateOf(false) }
+    var showBranding by remember { mutableStateOf(false) }
 
     val filtered = remember(projects, query, status) {
         projects.filter { project ->
@@ -72,6 +78,9 @@ fun ProjectsScreen(
                             style = MaterialTheme.typography.labelMedium
                         )
                     }
+                },
+                actions = {
+                    TextButton(onClick = { showBranding = true }) { Text("Marca") }
                 }
             )
         },
@@ -146,6 +155,10 @@ fun ProjectsScreen(
                 }
             }
         )
+    }
+
+    if (showBranding) {
+        BrandingDialog(vm = vm, onDismiss = { showBranding = false })
     }
 }
 
@@ -501,10 +514,13 @@ fun OpeningScreen(
     openingId: Long,
     onBack: () -> Unit,
     onCamera: () -> Unit,
-    onEditEvidence: (Long) -> Unit
+    onEditEvidence: (Long) -> Unit,
+    onDuplicated: (Long) -> Unit
 ) {
     var opening by remember(openingId) { mutableStateOf<OpeningEntity?>(null) }
     val evidence by vm.evidence(openingId).collectAsState(initial = emptyList())
+    val branding by vm.branding.collectAsState()
+    val brandLogo by rememberPhotoBitmap(branding.logoPath, maxSide = 220)
 
     LaunchedEffect(openingId) { opening = vm.opening(openingId) }
     val o = opening ?: return
@@ -533,6 +549,7 @@ fun OpeningScreen(
     var interference by remember(o.id, o.updatedAt) { mutableStateOf(o.interference) }
     var notes by remember(o.id, o.updatedAt) { mutableStateOf(o.notes) }
     var savedFlash by remember { mutableStateOf(false) }
+    var showIncidenceDialog by remember { mutableStateOf(false) }
 
     fun buildOpening(): OpeningEntity = o.copy(
         code = code.trim().uppercase().ifBlank { o.code },
@@ -632,6 +649,33 @@ fun OpeningScreen(
             }
 
             item {
+                SectionCard("Acciones rápidas") {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AssistChip(
+                            onClick = { showIncidenceDialog = true },
+                            label = { Text("Registrar incidencia") }
+                        )
+                        AssistChip(
+                            onClick = {
+                                val updated = buildOpening()
+                                opening = updated
+                                vm.saveOpeningDraft(projectId, updated)
+                                vm.duplicateOpening(projectId, updated, onDuplicated)
+                            },
+                            label = { Text("Duplicar vano") }
+                        )
+                    }
+                    Text(
+                        "Duplicar copia medidas y tipo, pero reinicia controles y estado para obligar una nueva verificación.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            item {
                 SectionCard("Identificación") {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
@@ -723,7 +767,7 @@ fun OpeningScreen(
                     } else {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             items(items = evidence, key = { it.id }) { item ->
-                                EvidenceThumb(item) { onEditEvidence(item.id) }
+                                EvidenceThumb(item, branding.companyName, brandLogo) { onEditEvidence(item.id) }
                             }
                         }
                     }
@@ -747,6 +791,16 @@ fun OpeningScreen(
             item { Spacer(Modifier.height(80.dp)) }
         }
     }
+
+    if (showIncidenceDialog) {
+        OpeningIncidenceDialog(
+            onDismiss = { showIncidenceDialog = false },
+            onSave = { title, detail, severity ->
+                vm.addOpeningEvent(projectId, openingId, title, detail, severity)
+                showIncidenceDialog = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -755,49 +809,69 @@ fun EvidenceEditorScreen(
     projectId: Long,
     evidenceId: Long,
     onBack: () -> Unit,
-    onDeleted: () -> Unit
+    onDeleted: () -> Unit,
+    onShareImage: (java.io.File) -> Unit
 ) {
     var item by remember(evidenceId) { mutableStateOf<EvidenceEntity?>(null) }
+    var project by remember(evidenceId) { mutableStateOf<ProjectEntity?>(null) }
+    var space by remember(evidenceId) { mutableStateOf<com.illu.relevametal.data.SpaceEntity?>(null) }
+    var opening by remember(evidenceId) { mutableStateOf<OpeningEntity?>(null) }
     var caption by remember { mutableStateOf("") }
-    var measurementMode by remember { mutableStateOf(false) }
+    var phase by remember { mutableStateOf("GENERAL") }
+    var activeTool by remember { mutableStateOf(AnnotationTool.NONE) }
     var firstPoint by remember { mutableStateOf<Offset?>(null) }
-    var pendingPair by remember { mutableStateOf<Pair<Offset, Offset>?>(null) }
+    var pendingMeasurement by remember { mutableStateOf<Pair<Offset, Offset>?>(null) }
+    var pendingTextPoint by remember { mutableStateOf<Offset?>(null) }
     var measurements by remember { mutableStateOf<List<MeasurementAnnotation>>(emptyList()) }
+    var markups by remember { mutableStateOf<List<MarkupAnnotation>>(emptyList()) }
     var showDelete by remember { mutableStateOf(false) }
+    var shareError by remember { mutableStateOf<String?>(null) }
+    val branding by vm.branding.collectAsState()
 
     LaunchedEffect(evidenceId) {
-        item = vm.evidenceItem(evidenceId)
-        caption = item?.caption.orEmpty()
-        measurements = AnnotationCodec.decode(item?.annotationJson.orEmpty())
+        val loaded = vm.evidenceItem(evidenceId)
+        item = loaded
+        caption = loaded?.caption.orEmpty()
+        phase = loaded?.phase ?: "GENERAL"
+        measurements = AnnotationCodec.decodeMeasurements(loaded?.annotationJson.orEmpty())
+        markups = AnnotationCodec.decodeMarkups(loaded?.annotationJson.orEmpty())
+        project = vm.project(projectId)
+        opening = loaded?.let { vm.opening(it.openingId) }
+        space = opening?.let { vm.space(it.spaceId) }
     }
 
     val ev = item ?: return
     val bitmapState = rememberPhotoBitmap(ev.filePath, maxSide = 1800, rotationDegrees = ev.rotationDegrees)
     val sourceSizeState = rememberPhotoDimensions(ev.filePath)
+    val logo by rememberPhotoBitmap(branding.logoPath, maxSide = 320)
     val bitmap = bitmapState.value
     val sourceSize = sourceSizeState.value
     val detections = remember(ev.detectedJson, sourceSize, ev.rotationDegrees) {
-        if (sourceSize == null) {
-            emptyList()
-        } else {
-            AnnotationCodec.rotateDetections(
-                AnnotationCodec.parseDetections(
-                    ev.detectedJson,
-                    sourceSize.width,
-                    sourceSize.height
-                ),
-                ev.rotationDegrees
-            )
-        }
+        if (sourceSize == null) emptyList() else AnnotationCodec.rotateDetections(
+            AnnotationCodec.parseDetections(ev.detectedJson, sourceSize.width, sourceSize.height),
+            ev.rotationDegrees
+        )
     }
     val displayMeasurements = remember(measurements, ev.rotationDegrees) {
         AnnotationCodec.rotateMeasurements(measurements, ev.rotationDegrees)
+    }
+    val displayMarkups = remember(markups, ev.rotationDegrees) {
+        AnnotationCodec.rotateMarkups(markups, ev.rotationDegrees)
+    }
+    val stampLines = remember(project, space, opening, ev.createdAt, phase, branding) {
+        buildList {
+            if (branding.showProject) project?.name?.takeIf { it.isNotBlank() }?.let { add("Obra: $it") }
+            if (branding.showSpace) space?.name?.takeIf { it.isNotBlank() }?.let { add("Sector: $it") }
+            if (branding.showOpening) opening?.let { add("Vano: ${it.code} · ${phaseLabel(phase)}") }
+            if (branding.showTimestamp) add(dateFormat.format(Date(ev.createdAt)))
+        }
     }
 
     fun persist(logChange: Boolean = false) {
         val updated = ev.copy(
             caption = caption.trim(),
-            annotationJson = AnnotationCodec.encode(measurements)
+            phase = phase,
+            annotationJson = AnnotationCodec.encode(measurements, markups)
         )
         item = updated
         vm.saveEvidence(projectId, updated, logChange)
@@ -806,7 +880,8 @@ fun EvidenceEditorScreen(
     fun rotateBy(delta: Int) {
         val updated = ev.copy(
             caption = caption.trim(),
-            annotationJson = AnnotationCodec.encode(measurements),
+            phase = phase,
+            annotationJson = AnnotationCodec.encode(measurements, markups),
             rotationDegrees = AnnotationCodec.normalizeRotation(ev.rotationDegrees + delta)
         )
         item = updated
@@ -814,11 +889,21 @@ fun EvidenceEditorScreen(
         vm.saveEvidence(projectId, updated)
     }
 
+    fun toOriginal(point: Offset): Offset {
+        val p = AnnotationCodec.inverseRotatePoint(point.x, point.y, ev.rotationDegrees)
+        return Offset(p.first, p.second)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Foto y cotas") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("←") } },
+                title = {
+                    Column {
+                        Text("Foto técnica")
+                        Text(phaseLabel(phase), style = MaterialTheme.typography.labelMedium)
+                    }
+                },
+                navigationIcon = { TextButton(onClick = { persist(); onBack() }) { Text("←") } },
                 actions = {
                     TextButton(onClick = { persist(logChange = true) }) { Text("Guardar") }
                 }
@@ -843,79 +928,123 @@ fun EvidenceEditorScreen(
                         bitmap = bitmap,
                         detections = detections,
                         measurements = displayMeasurements,
-                        measurementMode = measurementMode,
+                        markups = displayMarkups,
+                        activeTool = activeTool,
                         firstPoint = firstPoint,
                         onFirstPoint = { firstPoint = it },
-                        onMeasurePair = { a, b ->
-                            val originalA = AnnotationCodec.inverseRotatePoint(a.x, a.y, ev.rotationDegrees)
-                            val originalB = AnnotationCodec.inverseRotatePoint(b.x, b.y, ev.rotationDegrees)
-                            pendingPair = Offset(originalA.first, originalA.second) to
-                                Offset(originalB.first, originalB.second)
+                        onPair = { a, b ->
+                            val oa = toOriginal(a)
+                            val ob = toOriginal(b)
+                            when (activeTool) {
+                                AnnotationTool.MEASURE -> pendingMeasurement = oa to ob
+                                AnnotationTool.ARROW -> markups = markups + MarkupAnnotation("ARROW", oa.x, oa.y, ob.x, ob.y)
+                                AnnotationTool.RECTANGLE -> markups = markups + MarkupAnnotation("RECTANGLE", oa.x, oa.y, ob.x, ob.y)
+                                AnnotationTool.CIRCLE -> markups = markups + MarkupAnnotation("CIRCLE", oa.x, oa.y, ob.x, ob.y)
+                                else -> Unit
+                            }
                             firstPoint = null
+                            if (activeTool != AnnotationTool.MEASURE) persist()
                         },
+                        onSinglePoint = { point ->
+                            if (activeTool == AnnotationTool.TEXT) pendingTextPoint = toOriginal(point)
+                        },
+                        stamp = PhotoStampUi(
+                            companyName = branding.companyName.ifBlank { "Grupo IDEA" },
+                            lines = stampLines,
+                            logo = logo,
+                            enabled = branding.stampEnabled
+                        ),
                         modifier = Modifier.fillMaxSize()
                     )
                 }
             }
 
             Column(
-                Modifier.padding(12.dp),
+                Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Text("Herramientas", fontWeight = FontWeight.SemiBold)
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    FilterChip(
-                        selected = measurementMode,
-                        onClick = {
-                            measurementMode = !measurementMode
-                            firstPoint = null
-                        },
-                        label = { Text(if (measurementMode) "Cota activa" else "Agregar cota") }
-                    )
+                    AnnotationToolChip("Cota", AnnotationTool.MEASURE, activeTool) { activeTool = it; firstPoint = null }
+                    AnnotationToolChip("Flecha", AnnotationTool.ARROW, activeTool) { activeTool = it; firstPoint = null }
+                    AnnotationToolChip("Rectángulo", AnnotationTool.RECTANGLE, activeTool) { activeTool = it; firstPoint = null }
+                    AnnotationToolChip("Círculo", AnnotationTool.CIRCLE, activeTool) { activeTool = it; firstPoint = null }
+                    AnnotationToolChip("Texto", AnnotationTool.TEXT, activeTool) { activeTool = it; firstPoint = null }
+                }
+
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AssistChip(onClick = { rotateBy(-90) }, label = { Text("Girar ↺") })
+                    AssistChip(onClick = { rotateBy(90) }, label = { Text("Girar ↻") })
                     AssistChip(
-                        onClick = {
-                            if (measurements.isNotEmpty()) {
-                                measurements = measurements.dropLast(1)
-                                persist()
-                            }
-                        },
                         enabled = measurements.isNotEmpty(),
-                        label = { Text("Deshacer") }
+                        onClick = { if (measurements.isNotEmpty()) { measurements = measurements.dropLast(1); persist() } },
+                        label = { Text("Deshacer cota") }
                     )
                     AssistChip(
-                        onClick = { rotateBy(-90) },
-                        label = { Text("Girar ↺") }
-                    )
-                    AssistChip(
-                        onClick = { rotateBy(90) },
-                        label = { Text("Girar ↻") }
+                        enabled = markups.isNotEmpty(),
+                        onClick = { if (markups.isNotEmpty()) { markups = markups.dropLast(1); persist() } },
+                        label = { Text("Deshacer marca") }
                     )
                     AssistChip(
                         onClick = {
                             val updated = ev.copy(
                                 caption = caption,
-                                annotationJson = AnnotationCodec.encode(measurements),
+                                phase = phase,
+                                annotationJson = AnnotationCodec.encode(measurements, markups),
                                 isPrimary = true
                             )
                             item = updated
                             vm.setPrimaryEvidence(projectId, updated)
                         },
-                        label = { Text(if (ev.isPrimary) "Foto principal ✓" else "Usar de portada") }
+                        label = { Text(if (ev.isPrimary) "Principal ✓" else "Usar de portada") }
                     )
                     AssistChip(
-                        onClick = { showDelete = true },
-                        label = { Text("Eliminar") }
+                        onClick = {
+                            val exportItem = ev.copy(
+                                caption = caption.trim(),
+                                phase = phase,
+                                annotationJson = AnnotationCodec.encode(measurements, markups)
+                            )
+                            item = exportItem
+                            vm.saveEvidence(projectId, exportItem)
+                            vm.exportEvidenceImage(projectId, exportItem) { result ->
+                                result.onSuccess(onShareImage).onFailure { shareError = it.message ?: "No se pudo compartir la foto" }
+                            }
+                        },
+                        label = { Text("Compartir foto") }
                     )
+                    AssistChip(onClick = { showDelete = true }, label = { Text("Eliminar") })
                 }
 
+                Text("Etapa de la foto", fontWeight = FontWeight.SemiBold)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("GENERAL", "INICIAL", "INCIDENCIA", "CORRECCION", "FINAL").forEach { value ->
+                        FilterChip(
+                            selected = phase == value,
+                            onClick = { phase = value; persist() },
+                            label = { Text(phaseLabel(value)) }
+                        )
+                    }
+                }
+
+                val toolHint = when (activeTool) {
+                    AnnotationTool.NONE -> "Seleccioná una herramienta para marcar la foto."
+                    AnnotationTool.TEXT -> "Tocá el punto donde querés agregar la observación."
+                    else -> if (firstPoint == null) "Tocá el primer punto." else "Ahora tocá el segundo punto."
+                }
                 Text(
-                    if (measurementMode) {
-                        if (firstPoint == null) "Tocá el primer punto de la cota." else "Ahora tocá el segundo punto."
-                    } else {
-                        "Detección automática: ${detections.size} candidato(s) · Cotas: ${measurements.size} · Giro: ${ev.rotationDegrees}°"
-                    },
+                    "$toolHint · Detección: ${detections.size} · Cotas: ${measurements.size} · Marcas: ${markups.size} · Giro: ${ev.rotationDegrees}°",
                     style = MaterialTheme.typography.labelMedium
                 )
 
@@ -930,9 +1059,9 @@ fun EvidenceEditorScreen(
         }
     }
 
-    pendingPair?.let { pair ->
+    pendingMeasurement?.let { pair ->
         MeasurementDialog(
-            onDismiss = { pendingPair = null },
+            onDismiss = { pendingMeasurement = null },
             onSave = { label, value ->
                 measurements = measurements + MeasurementAnnotation(
                     x1 = pair.first.x,
@@ -942,9 +1071,29 @@ fun EvidenceEditorScreen(
                     label = label,
                     value = value
                 )
-                pendingPair = null
+                pendingMeasurement = null
                 persist()
             }
+        )
+    }
+
+    pendingTextPoint?.let { point ->
+        TextMarkupDialog(
+            onDismiss = { pendingTextPoint = null },
+            onSave = { text ->
+                markups = markups + MarkupAnnotation("TEXT", point.x, point.y, point.x, point.y, text)
+                pendingTextPoint = null
+                persist()
+            }
+        )
+    }
+
+    shareError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { shareError = null },
+            title = { Text("No se pudo compartir") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { shareError = null }) { Text("Aceptar") } }
         )
     }
 
@@ -953,9 +1102,7 @@ fun EvidenceEditorScreen(
             onDismissRequest = { showDelete = false },
             title = { Text("Eliminar fotografía") },
             text = { Text("La imagen se eliminará de este relevamiento.") },
-            dismissButton = {
-                TextButton(onClick = { showDelete = false }) { Text("Cancelar") }
-            },
+            dismissButton = { TextButton(onClick = { showDelete = false }) { Text("Cancelar") } },
             confirmButton = {
                 Button(onClick = {
                     vm.deleteEvidence(projectId, ev)
@@ -968,18 +1115,67 @@ fun EvidenceEditorScreen(
 }
 
 @Composable
-private fun EvidenceThumb(item: EvidenceEntity, onClick: () -> Unit) {
+private fun AnnotationToolChip(
+    label: String,
+    tool: AnnotationTool,
+    active: AnnotationTool,
+    onChange: (AnnotationTool) -> Unit
+) {
+    FilterChip(
+        selected = active == tool,
+        onClick = { onChange(if (active == tool) AnnotationTool.NONE else tool) },
+        label = { Text(label) }
+    )
+}
+
+@Composable
+private fun TextMarkupDialog(onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Texto sobre la foto") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Observación") },
+                minLines = 2
+            )
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = {
+            Button(enabled = text.isNotBlank(), onClick = { onSave(text.trim()) }) { Text("Agregar") }
+        }
+    )
+}
+
+private fun phaseLabel(value: String): String = when (value) {
+    "INICIAL" -> "Inicial"
+    "INCIDENCIA" -> "Incidencia"
+    "CORRECCION" -> "Corrección"
+    "FINAL" -> "Final"
+    else -> "General"
+}
+
+@Composable
+private fun EvidenceThumb(
+    item: EvidenceEntity,
+    companyName: String,
+    logo: ImageBitmap?,
+    onClick: () -> Unit
+) {
     val bitmap by rememberPhotoBitmap(item.filePath, maxSide = 420, rotationDegrees = item.rotationDegrees)
     ElevatedCard(
         Modifier
-            .width(150.dp)
+            .width(160.dp)
             .clickable(onClick = onClick)
     ) {
         Column {
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(110.dp)
+                    .height(116.dp)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 bitmap?.let {
@@ -999,14 +1195,35 @@ private fun EvidenceThumb(item: EvidenceEntity, onClick: () -> Unit) {
                         Text("Principal", Modifier.padding(horizontal = 6.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall)
                     }
                 }
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(5.dp)
+                        .background(Color(0xB8000000), RoundedCornerShape(7.dp))
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    logo?.let {
+                        androidx.compose.foundation.Image(
+                            bitmap = it,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                        )
+                    }
+                    Text(companyName.ifBlank { "Grupo IDEA" }, color = Color.White, style = MaterialTheme.typography.labelSmall)
+                }
             }
-            Text(
-                if (item.caption.isBlank()) "Abrir / acotar" else item.caption,
-                modifier = Modifier.padding(10.dp),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall
-            )
+            Column(Modifier.padding(10.dp)) {
+                Text(phaseLabel(item.phase), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (item.caption.isBlank()) "Abrir / documentar" else item.caption,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
     }
 }
@@ -1096,6 +1313,107 @@ private fun ProjectInfoEditor(project: ProjectEntity?, onSave: (ProjectEntity) -
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Guardar datos de obra") }
         }
+    }
+}
+
+@Composable
+private fun BrandingDialog(
+    vm: AppViewModel,
+    onDismiss: () -> Unit
+) {
+    val current by vm.branding.collectAsState()
+    var draft by remember(current) { mutableStateOf(current) }
+    var importError by remember { mutableStateOf<String?>(null) }
+    val logo by rememberPhotoBitmap(draft.logoPath, maxSide = 360)
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            vm.importBrandLogo(uri) { result ->
+                result.onFailure { importError = it.message ?: "No se pudo cargar el logo" }
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Marca en fotografías") },
+        confirmButton = {
+            Button(onClick = { vm.updateBranding(draft); onDismiss() }) { Text("Guardar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (logo != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = logo!!,
+                                contentDescription = "Logo de empresa",
+                                modifier = Modifier.size(64.dp),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                            )
+                        } else {
+                            Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                                Text("IDEA", Modifier.padding(14.dp), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(draft.companyName.ifBlank { "Grupo IDEA" }, fontWeight = FontWeight.Bold)
+                            Text(
+                                if (draft.logoPath.isBlank()) "Wordmark automático" else "Logo personalizado cargado",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = draft.companyName,
+                    onValueChange = { draft = draft.copy(companyName = it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Nombre de empresa") },
+                    singleLine = true
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { launcher.launch("image/*") }) { Text("Elegir logo") }
+                    if (draft.logoPath.isNotBlank()) {
+                        OutlinedButton(onClick = { vm.clearBrandLogo(); draft = draft.copy(logoPath = "") }) { Text("Quitar") }
+                    }
+                }
+
+                Text("El JPG original siempre queda intacto. La marca se aplica al visualizar, exportar y generar el PDF.", style = MaterialTheme.typography.bodySmall)
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Mostrar sello", Modifier.weight(1f))
+                    Switch(draft.stampEnabled, { draft = draft.copy(stampEnabled = it) })
+                }
+                BrandToggle("Fecha y hora", draft.showTimestamp) { draft = draft.copy(showTimestamp = it) }
+                BrandToggle("Nombre de obra", draft.showProject) { draft = draft.copy(showProject = it) }
+                BrandToggle("Espacio / sector", draft.showSpace) { draft = draft.copy(showSpace = it) }
+                BrandToggle("Código de vano", draft.showOpening) { draft = draft.copy(showOpening = it) }
+
+                importError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+    )
+}
+
+@Composable
+private fun BrandToggle(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f))
+        Switch(checked, onChecked)
     }
 }
 
@@ -1225,6 +1543,54 @@ private fun NewEventDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
         confirmButton = {
             Button(enabled = title.isNotBlank(), onClick = { onSave(title, detail, severity) }) { Text("Registrar") }
+        }
+    )
+}
+
+@Composable
+private fun OpeningIncidenceDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, String, String) -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var detail by remember { mutableStateOf("") }
+    var severity by remember { mutableStateOf("ALERTA") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Registrar incidencia") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Título") },
+                    placeholder = { Text("Ej. vano fuera de escuadra") }
+                )
+                OutlinedTextField(
+                    value = detail,
+                    onValueChange = { detail = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Detalle / acción requerida") },
+                    minLines = 3
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("INFO", "ALERTA", "DECISION").forEach { value ->
+                        FilterChip(
+                            selected = severity == value,
+                            onClick = { severity = value },
+                            label = { Text(if (value == "DECISION") "Decisión" else value.lowercase().replaceFirstChar { it.uppercase() }) }
+                        )
+                    }
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = {
+            Button(
+                enabled = title.isNotBlank(),
+                onClick = { onSave(title.trim(), detail.trim(), severity) }
+            ) { Text("Registrar") }
         }
     )
 }
