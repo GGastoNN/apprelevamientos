@@ -132,6 +132,9 @@ private fun App(vm: AppViewModel) {
                         current.openingId,
                         evidenceId
                     )
+                },
+                onDuplicated = { newOpeningId ->
+                    screen = Screen.Opening(current.projectId, current.spaceId, newOpeningId)
                 }
             )
         }
@@ -179,6 +182,21 @@ private fun App(vm: AppViewModel) {
                         current.projectId,
                         current.spaceId,
                         current.openingId
+                    )
+                },
+                onShareImage = { file ->
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.files",
+                        file
+                    )
+                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "image/jpeg"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(
+                        Intent.createChooser(sendIntent, "Compartir fotografía técnica")
                     )
                 }
             )
