@@ -13,6 +13,24 @@ data class MeasurementAnnotation(
     val value: String
 )
 
+data class MarkupAnnotation(
+    val type: String,
+    val x1: Float,
+    val y1: Float,
+    val x2: Float,
+    val y2: Float,
+    val text: String = ""
+)
+
+enum class AnnotationTool {
+    NONE,
+    MEASURE,
+    ARROW,
+    RECTANGLE,
+    CIRCLE,
+    TEXT
+}
+
 data class DetectionBox(
     val left: Float,
     val top: Float,
@@ -22,9 +40,17 @@ data class DetectionBox(
 )
 
 object AnnotationCodec {
-    fun encode(items: List<MeasurementAnnotation>): String =
-        items.joinToString("\n") { item ->
-            listOf(
+    /**
+     * V0.7 format. Legacy V0.5/V0.6 measurement-only rows are still accepted.
+     */
+    fun encode(
+        measurements: List<MeasurementAnnotation>,
+        markups: List<MarkupAnnotation> = emptyList()
+    ): String {
+        val rows = mutableListOf<String>()
+        measurements.forEach { item ->
+            rows += listOf(
+                "M",
                 item.x1,
                 item.y1,
                 item.x2,
@@ -33,17 +59,65 @@ object AnnotationCodec {
                 enc(item.value)
             ).joinToString("|")
         }
+        markups.forEach { item ->
+            rows += listOf(
+                "K",
+                item.type,
+                item.x1,
+                item.y1,
+                item.x2,
+                item.y2,
+                enc(item.text)
+            ).joinToString("|")
+        }
+        return rows.joinToString("\n")
+    }
 
-    fun decode(raw: String): List<MeasurementAnnotation> {
+
+    fun decode(raw: String): List<MeasurementAnnotation> = decodeMeasurements(raw)
+
+    fun decodeMeasurements(raw: String): List<MeasurementAnnotation> {
         if (raw.isBlank()) return emptyList()
         return raw.lineSequence().mapNotNull { line ->
             val parts = line.split('|')
-            if (parts.size != 6) return@mapNotNull null
-            val x1 = parts[0].toFloatOrNull() ?: return@mapNotNull null
-            val y1 = parts[1].toFloatOrNull() ?: return@mapNotNull null
-            val x2 = parts[2].toFloatOrNull() ?: return@mapNotNull null
-            val y2 = parts[3].toFloatOrNull() ?: return@mapNotNull null
-            MeasurementAnnotation(x1, y1, x2, y2, dec(parts[4]), dec(parts[5]))
+            when {
+                parts.size == 7 && parts[0] == "M" -> {
+                    val x1 = parts[1].toFloatOrNull() ?: return@mapNotNull null
+                    val y1 = parts[2].toFloatOrNull() ?: return@mapNotNull null
+                    val x2 = parts[3].toFloatOrNull() ?: return@mapNotNull null
+                    val y2 = parts[4].toFloatOrNull() ?: return@mapNotNull null
+                    MeasurementAnnotation(x1, y1, x2, y2, dec(parts[5]), dec(parts[6]))
+                }
+                // Legacy format: x1|y1|x2|y2|label|value
+                parts.size == 6 && parts[0].toFloatOrNull() != null -> {
+                    val x1 = parts[0].toFloatOrNull() ?: return@mapNotNull null
+                    val y1 = parts[1].toFloatOrNull() ?: return@mapNotNull null
+                    val x2 = parts[2].toFloatOrNull() ?: return@mapNotNull null
+                    val y2 = parts[3].toFloatOrNull() ?: return@mapNotNull null
+                    MeasurementAnnotation(x1, y1, x2, y2, dec(parts[4]), dec(parts[5]))
+                }
+                else -> null
+            }
+        }.toList()
+    }
+
+    fun decodeMarkups(raw: String): List<MarkupAnnotation> {
+        if (raw.isBlank()) return emptyList()
+        return raw.lineSequence().mapNotNull { line ->
+            val parts = line.split('|')
+            if (parts.size != 7 || parts[0] != "K") return@mapNotNull null
+            val x1 = parts[2].toFloatOrNull() ?: return@mapNotNull null
+            val y1 = parts[3].toFloatOrNull() ?: return@mapNotNull null
+            val x2 = parts[4].toFloatOrNull() ?: return@mapNotNull null
+            val y2 = parts[5].toFloatOrNull() ?: return@mapNotNull null
+            MarkupAnnotation(
+                type = parts[1],
+                x1 = x1,
+                y1 = y1,
+                x2 = x2,
+                y2 = y2,
+                text = dec(parts[6])
+            )
         }.toList()
     }
 
@@ -68,7 +142,6 @@ object AnnotationCodec {
         }.toList()
     }
 
-
     fun normalizeRotation(degrees: Int): Int = ((degrees % 360) + 360) % 360
 
     fun rotatePoint(x: Float, y: Float, degrees: Int): Pair<Float, Float> =
@@ -91,19 +164,21 @@ object AnnotationCodec {
         return items.map { item ->
             val p1 = rotatePoint(item.x1, item.y1, rotation)
             val p2 = rotatePoint(item.x2, item.y2, rotation)
-            item.copy(
-                x1 = p1.first,
-                y1 = p1.second,
-                x2 = p2.first,
-                y2 = p2.second
-            )
+            item.copy(x1 = p1.first, y1 = p1.second, x2 = p2.first, y2 = p2.second)
         }
     }
 
-    fun rotateDetections(
-        items: List<DetectionBox>,
-        degrees: Int
-    ): List<DetectionBox> {
+    fun rotateMarkups(items: List<MarkupAnnotation>, degrees: Int): List<MarkupAnnotation> {
+        val rotation = normalizeRotation(degrees)
+        if (rotation == 0) return items
+        return items.map { item ->
+            val p1 = rotatePoint(item.x1, item.y1, rotation)
+            val p2 = rotatePoint(item.x2, item.y2, rotation)
+            item.copy(x1 = p1.first, y1 = p1.second, x2 = p2.first, y2 = p2.second)
+        }
+    }
+
+    fun rotateDetections(items: List<DetectionBox>, degrees: Int): List<DetectionBox> {
         val rotation = normalizeRotation(degrees)
         if (rotation == 0) return items
         return items.map { box ->
