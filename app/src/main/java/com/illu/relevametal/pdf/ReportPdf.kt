@@ -5,7 +5,9 @@ import android.graphics.*
 import android.graphics.pdf.PdfDocument
 import com.illu.relevametal.annotation.AnnotationCodec
 import com.illu.relevametal.annotation.MeasurementAnnotation
+import com.illu.relevametal.branding.BrandingSettings
 import com.illu.relevametal.data.*
+import com.illu.relevametal.render.PhotoRenderer
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -60,7 +62,8 @@ class ReportPdf(private val context: Context) {
     fun generate(
         project: ProjectEntity,
         spaces: List<SpaceBundle>,
-        events: List<EventEntity>
+        events: List<EventEntity>,
+        branding: BrandingSettings
     ): File {
         val pdf = PdfDocument()
         var pageNumber = 0
@@ -71,7 +74,7 @@ class ReportPdf(private val context: Context) {
             val page = pdf.startPage(info)
             val canvas = page.canvas
             canvas.drawColor(Color.WHITE)
-            drawHeader(canvas, project.name, pageNumber)
+            drawHeader(canvas, project.name, pageNumber, branding)
             title?.let {
                 canvas.drawText(it, margin, 72f, h1Paint)
             }
@@ -137,7 +140,7 @@ class ReportPdf(private val context: Context) {
                     val photoPage = startPage("EVIDENCIA · ${bundle.opening.code} · Foto ${index + 1}/${bundle.evidence.size}")
                     page = photoPage.first
                     canvas = photoPage.second
-                    drawEvidencePage(canvas, bundle.opening, evidence)
+                    drawEvidencePage(canvas, project, space.space, bundle.opening, evidence, branding)
                     finish(page)
                 }
             }
@@ -204,8 +207,8 @@ class ReportPdf(private val context: Context) {
         return out
     }
 
-    private fun drawHeader(canvas: Canvas, projectName: String, pageNo: Int) {
-        canvas.drawText("GRUPO IDEA · RELEVAMIENTOS", margin, 28f, smallPaint)
+    private fun drawHeader(canvas: Canvas, projectName: String, pageNo: Int, branding: BrandingSettings) {
+        canvas.drawText("${branding.companyName.uppercase()} · RELEVAMIENTOS", margin, 28f, smallPaint)
         val pageText = "Pág. $pageNo"
         canvas.drawText(pageText, pageWidth - margin - smallPaint.measureText(pageText), 28f, smallPaint)
         canvas.drawLine(margin, 38f, pageWidth - margin, 38f, linePaint)
@@ -371,22 +374,26 @@ class ReportPdf(private val context: Context) {
 
     private fun drawEvidencePage(
         canvas: Canvas,
+        project: ProjectEntity,
+        space: SpaceEntity,
         opening: OpeningEntity,
-        evidence: EvidenceEntity
+        evidence: EvidenceEntity,
+        branding: BrandingSettings
     ) {
         var y = 104f
-        val source = decodeSampledBitmap(evidence.filePath, 2200)
-        if (source == null) {
+        val annotated = PhotoRenderer.render(
+            evidence = evidence,
+            project = project,
+            space = space,
+            opening = opening,
+            branding = branding,
+            maxSide = 2200
+        )
+        if (annotated == null) {
             canvas.drawText("La fotografía no está disponible en el dispositivo.", margin, y, bodyPaint)
             return
         }
 
-        val rotated = rotateBitmap(source, evidence.rotationDegrees)
-        val displayAnnotations = AnnotationCodec.rotateMeasurements(
-            AnnotationCodec.decode(evidence.annotationJson),
-            evidence.rotationDegrees
-        )
-        val annotated = renderAnnotations(rotated, displayAnnotations)
         val maxW = pageWidth - margin * 2
         val maxH = 560f
         val scale = minOf(maxW / annotated.width, maxH / annotated.height)
@@ -396,7 +403,7 @@ class ReportPdf(private val context: Context) {
         canvas.drawBitmap(annotated, null, dst, null)
         y = dst.bottom + 18f
 
-        canvas.drawText("Vano: ${opening.code} · ${opening.type}", margin, y, h2Paint)
+        canvas.drawText("Vano: ${opening.code} · ${opening.type} · ${phaseLabel(evidence.phase)}", margin, y, h2Paint)
         y += 16f
         canvas.drawText("Fecha: ${formatDate(evidence.createdAt)}", margin, y, smallPaint)
         y += 16f
@@ -404,12 +411,18 @@ class ReportPdf(private val context: Context) {
             y = drawWrapped(canvas, evidence.caption, margin, y, pageWidth - margin * 2, bodyPaint, 5)
             y += 8f
         }
-        val count = AnnotationCodec.decode(evidence.annotationJson).size
-        canvas.drawText("Cotas dibujadas: $count", margin, y, smallPaint)
+        val measureCount = AnnotationCodec.decodeMeasurements(evidence.annotationJson).size
+        val markupCount = AnnotationCodec.decodeMarkups(evidence.annotationJson).size
+        canvas.drawText("Cotas: $measureCount · Marcas: $markupCount", margin, y, smallPaint)
+        annotated.recycle()
+    }
 
-        if (annotated !== rotated) annotated.recycle()
-        if (rotated !== source) rotated.recycle()
-        source.recycle()
+    private fun phaseLabel(value: String): String = when (value) {
+        "INICIAL" -> "Inicial"
+        "INCIDENCIA" -> "Incidencia"
+        "CORRECCION" -> "Corrección"
+        "FINAL" -> "Final"
+        else -> "General"
     }
 
 
