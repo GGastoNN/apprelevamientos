@@ -64,7 +64,22 @@ private fun App(vm: AppViewModel) {
         Screen.Projects -> {
             ProjectsScreen(
                 vm = vm,
-                onOpen = { projectId -> screen = Screen.Project(projectId) }
+                onOpen = { projectId -> screen = Screen.Project(projectId) },
+                onShareData = { file ->
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.files",
+                        file
+                    )
+                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/octet-stream"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(
+                        Intent.createChooser(sendIntent, "Compartir datos de relevamiento")
+                    )
+                }
             )
         }
 
@@ -89,6 +104,21 @@ private fun App(vm: AppViewModel) {
                     }
                     context.startActivity(
                         Intent.createChooser(sendIntent, "Compartir informe de relevamiento")
+                    )
+                },
+                onShareData = { file ->
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.files",
+                        file
+                    )
+                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/octet-stream"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(
+                        Intent.createChooser(sendIntent, "Compartir datos de la obra")
                     )
                 }
             )
