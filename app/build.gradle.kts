@@ -13,8 +13,8 @@ android {
         applicationId = "com.illu.relevametal"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.9.0"
+        versionCode = 8
+        versionName = "1.0.1"
     }
 
     buildFeatures { compose = true }
