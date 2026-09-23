@@ -5,6 +5,8 @@
 
     <application
         android:allowBackup="true"
+        android:icon="@drawable/app_logo"
+        android:roundIcon="@drawable/app_logo"
         android:label="@string/app_name"
         android:theme="@style/Theme.GrupoIDEA">
         <activity
