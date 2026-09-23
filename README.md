@@ -66,9 +66,14 @@ La detección automática ubica candidatos visuales de vano, pero no convierte p
 - CameraX 1.4.1
 - compileSdk / targetSdk 35
 - Java 17
-- versionCode 8
-- versionName 1.0.1
+- versionCode 9
+- versionName 1.1.0
 
 ## Transferencia entre dispositivos (v1.0)
 
 La aplicación puede exportar una obra o todas las obras a un archivo `*.gidea` e importarlo en otro dispositivo con la misma aplicación. El respaldo contiene la estructura completa del relevamiento y todas las fotografías originales con sus cotas/anotaciones. Las obras importadas se agregan como nuevas, sin sobrescribir las existentes.
+
+
+## Personalización
+
+Desde **Ajustes → Personalización** se puede elegir tema del sistema, claro u oscuro, cambiar el color principal de la interfaz y configurar los colores de cotas, flechas/figuras, textos, marcadores, detección automática y sello sobre fotografías. También se puede ajustar el espesor de las líneas y el tamaño de los textos de las anotaciones. Los estilos de cotas, marcas, textos y sello se aplican al editor, a las imágenes compartidas y a las fotografías renderizadas dentro del PDF; la detección automática mantiene su color configurable como ayuda visual del editor. Nada de esto modifica los JPG originales ni los datos geométricos de las cotas.
