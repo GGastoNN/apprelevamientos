@@ -36,8 +36,9 @@ object PhotoRenderer {
     ): Bitmap? {
         val source = decodeSampledBitmap(evidence.filePath, maxSide) ?: return null
         val rotated = rotateBitmap(source, evidence.rotationDegrees)
-        val output = rotated.copy(Bitmap.Config.ARGB_8888, true)
-        if (output !== rotated) rotated.recycle()
+        val limited = limitBitmap(rotated, maxSide)
+        val output = limited.copy(Bitmap.Config.ARGB_8888, true)
+        if (output !== limited) limited.recycle()
 
         val measurements = AnnotationCodec.rotateMeasurements(
             AnnotationCodec.decodeMeasurements(evidence.annotationJson),
@@ -66,6 +67,17 @@ object PhotoRenderer {
         while (largest / sample > maxSide * 2) sample *= 2
         val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
         return BitmapFactory.decodeFile(path, options)
+    }
+
+    private fun limitBitmap(source: Bitmap, maxSide: Int): Bitmap {
+        val largest = max(source.width, source.height)
+        if (largest <= maxSide || maxSide <= 0) return source
+        val scale = maxSide.toFloat() / largest.toFloat()
+        val width = (source.width * scale).toInt().coerceAtLeast(1)
+        val height = (source.height * scale).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(source, width, height, true).also { scaled ->
+            if (scaled !== source) source.recycle()
+        }
     }
 
     private fun rotateBitmap(source: Bitmap, degrees: Int): Bitmap {
