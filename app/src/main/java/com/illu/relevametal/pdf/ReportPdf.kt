@@ -63,8 +63,10 @@ class ReportPdf(private val context: Context) {
         project: ProjectEntity,
         spaces: List<SpaceBundle>,
         events: List<EventEntity>,
-        branding: BrandingSettings
+        branding: BrandingSettings,
+        referencePhotos: List<ProjectReferencePhotoEntity>
     ): File {
+        require(referencePhotos.isNotEmpty()) { "El informe requiere al menos una imagen del edificio para la portada." }
         val pdf = PdfDocument()
         var pageNumber = 0
 
@@ -86,7 +88,7 @@ class ReportPdf(private val context: Context) {
         }
 
         var (page, canvas) = startPage()
-        drawCover(canvas, project, spaces, events)
+        drawCover(canvas, project, spaces, events, referencePhotos)
         finish(page)
 
         for (space in spaces) {
@@ -198,9 +200,15 @@ class ReportPdf(private val context: Context) {
             .replace(Regex("[^A-Za-z0-9áéíóúÁÉÍÓÚñÑ_-]+"), "_")
             .take(40)
             .ifBlank { "Obra" }
+        val brandPrefix = branding.companyName
+            .trim()
+            .replace(Regex("[^A-Za-z0-9áéíóúÁÉÍÓÚñÑ_-]+"), "_")
+            .take(24)
+            .trim('_')
+            .ifBlank { "Relevamiento" }
         val out = File(
             dir,
-            "GrupoIDEA_Relevamiento_${safeName}_${System.currentTimeMillis()}.pdf"
+            "${brandPrefix}_${safeName}_${System.currentTimeMillis()}.pdf"
         )
         FileOutputStream(out).use { pdf.writeTo(it) }
         pdf.close()
@@ -208,7 +216,9 @@ class ReportPdf(private val context: Context) {
     }
 
     private fun drawHeader(canvas: Canvas, projectName: String, pageNo: Int, branding: BrandingSettings) {
-        canvas.drawText("${branding.companyName.uppercase()} · RELEVAMIENTOS", margin, 28f, smallPaint)
+        val company = branding.companyName.trim()
+        val headerText = if (company.isBlank()) "RELEVAMIENTOS" else "${company.uppercase()} · RELEVAMIENTOS"
+        canvas.drawText(headerText, margin, 28f, smallPaint)
         val pageText = "Pág. $pageNo"
         canvas.drawText(pageText, pageWidth - margin - smallPaint.measureText(pageText), 28f, smallPaint)
         canvas.drawLine(margin, 38f, pageWidth - margin, 38f, linePaint)
@@ -220,61 +230,127 @@ class ReportPdf(private val context: Context) {
         canvas: Canvas,
         project: ProjectEntity,
         spaces: List<SpaceBundle>,
-        events: List<EventEntity>
+        events: List<EventEntity>,
+        referencePhotos: List<ProjectReferencePhotoEntity>
     ) {
-        var y = 120f
+        var y = 96f
         canvas.drawText("INFORME DE RELEVAMIENTO", margin, y, titlePaint)
         y += 28f
         canvas.drawText("CARPINTERÍA METÁLICA", margin, y, h1Paint)
-        y += 52f
+        y += 34f
 
         canvas.drawText("Obra", margin, y, smallPaint)
-        y += 18f
-        y = drawWrapped(canvas, project.name, margin, y, pageWidth - margin * 2, h1Paint, 3)
-        y += 18f
-
-        y = coverField(canvas, "Cliente", project.client, y)
-        y = coverField(canvas, "Dirección", project.address, y)
-        y = coverField(canvas, "Responsable", project.responsible, y)
-        y = coverField(canvas, "Estado", statusLabel(project.status), y)
-        y = coverField(canvas, "Informe generado", formatDate(System.currentTimeMillis()), y)
-
-        val openingCount = spaces.sumOf { it.openings.size }
-        val photoCount = spaces.sumOf { s -> s.openings.sumOf { it.evidence.size } }
+        y += 17f
+        y = drawWrapped(canvas, project.name, margin, y, pageWidth - margin * 2, h1Paint, 2)
         y += 12f
-        canvas.drawLine(margin, y, pageWidth - margin, y, linePaint)
-        y += 28f
-        canvas.drawText("RESUMEN", margin, y, h1Paint)
-        y += 26f
-        canvas.drawText("Espacios / sectores: ${spaces.size}", margin, y, bodyPaint)
-        y += 17f
-        canvas.drawText("Vanos relevados / cargados: $openingCount", margin, y, bodyPaint)
-        y += 17f
-        canvas.drawText("Fotografías: $photoCount", margin, y, bodyPaint)
-        y += 17f
-        canvas.drawText("Eventos en bitácora: ${events.size}", margin, y, bodyPaint)
-        y += 28f
 
-        if (project.notes.isNotBlank()) {
-            canvas.drawText("OBSERVACIONES GENERALES", margin, y, h2Paint)
-            y += 18f
-            drawWrapped(canvas, project.notes, margin, y, pageWidth - margin * 2, bodyPaint, 8)
+        canvas.drawText("REFERENCIAS DEL EDIFICIO", margin, y, h2Paint)
+        y += 10f
+        val photoTop = y
+        val photoHeight = 205f
+        drawCoverReferencePhotos(canvas, referencePhotos, photoTop, photoHeight)
+        y = photoTop + photoHeight + 22f
+        if (referencePhotos.size > 3) {
+            canvas.drawText("+${referencePhotos.size - 3} imagen(es) de referencia adicionales", margin, y - 7f, smallPaint)
         }
 
-        canvas.drawText(
+        val colGap = 22f
+        val colWidth = (pageWidth - margin * 2 - colGap) / 2f
+        val rightX = margin + colWidth + colGap
+        drawCoverField(canvas, "Cliente", project.client, margin, y, colWidth)
+        drawCoverField(canvas, "Responsable", project.responsible, rightX, y, colWidth)
+        y += 43f
+        drawCoverField(canvas, "Dirección", project.address, margin, y, colWidth)
+        drawCoverField(canvas, "Estado", statusLabel(project.status), rightX, y, colWidth)
+        y += 43f
+        drawCoverField(canvas, "Informe generado", formatDate(System.currentTimeMillis()), margin, y, colWidth)
+
+        val openingCount = spaces.sumOf { it.openings.size }
+        val evidenceCount = spaces.sumOf { s -> s.openings.sumOf { it.evidence.size } }
+        y += 48f
+        canvas.drawLine(margin, y, pageWidth - margin, y, linePaint)
+        y += 22f
+        canvas.drawText("RESUMEN", margin, y, h1Paint)
+        y += 21f
+        canvas.drawText("Espacios / sectores: ${spaces.size} · Vanos: $openingCount", margin, y, bodyPaint)
+        y += 16f
+        canvas.drawText("Fotos de vanos: $evidenceCount · Referencias del edificio: ${referencePhotos.size} · Eventos: ${events.size}", margin, y, bodyPaint)
+        y += 24f
+
+        if (project.notes.isNotBlank() && y < 740f) {
+            canvas.drawText("OBSERVACIONES GENERALES", margin, y, h2Paint)
+            y += 17f
+            drawWrapped(canvas, project.notes, margin, y, pageWidth - margin * 2, bodyPaint, 3)
+        }
+
+        drawWrapped(
+            canvas,
             "Las cotas manuales/calibradas constituyen la referencia documental. La detección visual automática de vanos es una ayuda de encuadre y no reemplaza la medición física.",
             margin,
             790f,
-            smallPaint
+            pageWidth - margin * 2,
+            smallPaint,
+            2
         )
     }
 
-    private fun coverField(canvas: Canvas, label: String, value: String, startY: Float): Float {
-        var y = startY
-        canvas.drawText(label, margin, y, smallPaint)
-        y += 15f
-        canvas.drawText(value.ifBlank { "—" }.take(90), margin, y, bodyPaint)
-        return y + 24f
+    private fun drawCoverField(
+        canvas: Canvas,
+        label: String,
+        value: String,
+        x: Float,
+        y: Float,
+        width: Float
+    ) {
+        canvas.drawText(label, x, y, smallPaint)
+        drawWrapped(canvas, value.ifBlank { "—" }, x, y + 14f, width, bodyPaint, 2)
+    }
+
+    private fun drawCoverReferencePhotos(
+        canvas: Canvas,
+        referencePhotos: List<ProjectReferencePhotoEntity>,
+        top: Float,
+        height: Float
+    ) {
+        val shown = referencePhotos.take(3)
+        val gap = 8f
+        val totalWidth = pageWidth - margin * 2
+        val cellWidth = (totalWidth - gap * (shown.size - 1).coerceAtLeast(0)) / shown.size.coerceAtLeast(1)
+        val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(205, 216, 212)
+            style = Paint.Style.STROKE
+            strokeWidth = 1f
+        }
+        val missingBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(242, 245, 244) }
+
+        shown.forEachIndexed { index, photo ->
+            val left = margin + index * (cellWidth + gap)
+            val dst = RectF(left, top, left + cellWidth, top + height)
+            val bitmap = decodeSampledBitmap(photo.filePath, 1400)
+            if (bitmap != null) {
+                drawBitmapCenterCrop(canvas, bitmap, dst)
+                bitmap.recycle()
+            } else {
+                canvas.drawRect(dst, missingBg)
+                canvas.drawText("Imagen no disponible", left + 8f, top + height / 2f, smallPaint)
+            }
+            canvas.drawRect(dst, border)
+        }
+    }
+
+    private fun drawBitmapCenterCrop(canvas: Canvas, bitmap: Bitmap, dst: RectF) {
+        val srcRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
+        val dstRatio = dst.width() / dst.height()
+        val src = if (srcRatio > dstRatio) {
+            val wantedWidth = (bitmap.height * dstRatio).toInt().coerceAtLeast(1)
+            val left = ((bitmap.width - wantedWidth) / 2).coerceAtLeast(0)
+            Rect(left, 0, (left + wantedWidth).coerceAtMost(bitmap.width), bitmap.height)
+        } else {
+            val wantedHeight = (bitmap.width / dstRatio).toInt().coerceAtLeast(1)
+            val top = ((bitmap.height - wantedHeight) / 2).coerceAtLeast(0)
+            Rect(0, top, bitmap.width, (top + wantedHeight).coerceAtMost(bitmap.height))
+        }
+        canvas.drawBitmap(bitmap, src, dst, null)
     }
 
     private fun drawOpeningSummary(
