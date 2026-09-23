@@ -40,6 +40,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun openings(spaceId: Long) = db.openings().observe(spaceId)
     fun evidence(openingId: Long) = db.evidence().observe(openingId)
     fun events(projectId: Long) = db.events().observe(projectId)
+    fun projectReferencePhotos(projectId: Long) = db.projectReferencePhotos().observe(projectId)
 
     fun projectStats(projectId: Long): Flow<ProjectStats> = combine(
         db.spaces().count(projectId),
@@ -56,7 +57,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun evidenceItem(id: Long) = db.evidence().get(id)
 
     fun updateBranding(settings: BrandingSettings) {
-        val normalized = settings.copy(companyName = settings.companyName.trim().ifBlank { "Grupo IDEA" })
+        val normalized = settings.copy(companyName = settings.companyName.trim())
         brandingStore.save(normalized)
         branding.value = normalized
     }
@@ -88,6 +89,55 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         brandingStore.save(updated)
         branding.value = updated
     }
+
+    fun addProjectReferencePhotos(
+        projectId: Long,
+        uris: List<Uri>,
+        onReady: (Result<Unit>) -> Unit = {}
+    ) = viewModelScope.launch {
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                require(uris.isNotEmpty()) { "Seleccioná al menos una imagen del edificio" }
+                val resolver = getApplication<Application>().contentResolver
+                val dir = File(getApplication<Application>().filesDir, "project_reference_photos/$projectId").apply { mkdirs() }
+                uris.forEachIndexed { index, uri ->
+                    val mime = resolver.getType(uri).orEmpty()
+                    val extension = when {
+                        mime.contains("png", ignoreCase = true) -> "png"
+                        mime.contains("webp", ignoreCase = true) -> "webp"
+                        mime.contains("heic", ignoreCase = true) || mime.contains("heif", ignoreCase = true) -> "heic"
+                        else -> "jpg"
+                    }
+                    val target = File(dir, "building_${System.currentTimeMillis()}_${index}.$extension")
+                    resolver.openInputStream(uri).use { input ->
+                        requireNotNull(input) { "No se pudo leer una de las imágenes seleccionadas" }
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(target.absolutePath, bounds)
+                    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                        target.delete()
+                        error("Una de las imágenes seleccionadas no es válida")
+                    }
+                    db.projectReferencePhotos().insert(
+                        ProjectReferencePhotoEntity(
+                            projectId = projectId,
+                            filePath = target.absolutePath
+                        )
+                    )
+                }
+                touchProject(projectId)
+            }
+        }
+        onReady(result)
+    }
+
+    fun deleteProjectReferencePhoto(projectId: Long, item: ProjectReferencePhotoEntity) =
+        viewModelScope.launch(Dispatchers.IO) {
+            db.projectReferencePhotos().delete(item)
+            runCatching { File(item.filePath).delete() }
+            touchProject(projectId)
+        }
 
     fun addProject(
         name: String,
@@ -421,7 +471,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     ReportPdf.SpaceBundle(space, openings)
                 }
                 val events = db.events().list(projectId)
-                ReportPdf(getApplication()).generate(project, spaces, events, branding.value)
+                val referencePhotos = db.projectReferencePhotos()
+                    .list(projectId)
+                    .filter { File(it.filePath).isFile }
+                require(referencePhotos.isNotEmpty()) {
+                    "Para generar el PDF agregá al menos una imagen válida del edificio en la pestaña Obra."
+                }
+                ReportPdf(getApplication()).generate(project, spaces, events, branding.value, referencePhotos)
             }
         }
         onReady(result)

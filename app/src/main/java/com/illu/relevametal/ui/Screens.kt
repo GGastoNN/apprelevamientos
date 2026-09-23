@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.illu.relevametal.R
 import com.illu.relevametal.annotation.AnnotationCodec
 import com.illu.relevametal.annotation.AnnotationTool
 import com.illu.relevametal.annotation.MarkupAnnotation
@@ -36,6 +37,7 @@ import com.illu.relevametal.data.EvidenceEntity
 import com.illu.relevametal.data.EventEntity
 import com.illu.relevametal.data.OpeningEntity
 import com.illu.relevametal.data.ProjectEntity
+import com.illu.relevametal.data.ProjectReferencePhotoEntity
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -71,12 +73,28 @@ fun ProjectsScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text("Grupo IDEA", fontWeight = FontWeight.Bold)
-                        Text(
-                            "Relevamientos",
-                            style = MaterialTheme.typography.labelMedium
-                        )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(42.dp),
+                            shape = RoundedCornerShape(11.dp)
+                        ) {
+                            androidx.compose.foundation.Image(
+                                painter = androidx.compose.ui.res.painterResource(R.drawable.app_logo),
+                                contentDescription = "Logo de la aplicación",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        }
+                        Column {
+                            Text("Grupo IDEA", fontWeight = FontWeight.Bold)
+                            Text(
+                                "Relevamientos",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -211,6 +229,7 @@ fun ProjectScreen(
 ) {
     val spaces by vm.spaces(projectId).collectAsState(initial = emptyList())
     val events by vm.events(projectId).collectAsState(initial = emptyList())
+    val referencePhotos by vm.projectReferencePhotos(projectId).collectAsState(initial = emptyList())
     val stats by vm.projectStats(projectId).collectAsState(initial = ProjectStats())
     var project by remember(projectId) { mutableStateOf<ProjectEntity?>(null) }
     var tab by remember { mutableIntStateOf(0) }
@@ -320,7 +339,9 @@ fun ProjectScreen(
 
                 1 -> Timeline(events)
                 else -> ProjectInfoEditor(
+                    vm = vm,
                     project = p,
+                    referencePhotos = referencePhotos,
                     onSave = {
                         project = it
                         vm.updateProject(it)
@@ -949,7 +970,7 @@ fun EvidenceEditorScreen(
                             if (activeTool == AnnotationTool.TEXT) pendingTextPoint = toOriginal(point)
                         },
                         stamp = PhotoStampUi(
-                            companyName = branding.companyName.ifBlank { "Grupo IDEA" },
+                            companyName = branding.companyName.trim(),
                             lines = stampLines,
                             logo = logo,
                             enabled = branding.stampEnabled
@@ -1195,24 +1216,28 @@ private fun EvidenceThumb(
                         Text("Principal", Modifier.padding(horizontal = 6.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall)
                     }
                 }
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(5.dp)
-                        .background(Color(0xB8000000), RoundedCornerShape(7.dp))
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    logo?.let {
-                        androidx.compose.foundation.Image(
-                            bitmap = it,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
-                        )
+                if (logo != null || companyName.isNotBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(5.dp)
+                            .background(Color(0xB8000000), RoundedCornerShape(7.dp))
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        logo?.let {
+                            androidx.compose.foundation.Image(
+                                bitmap = it,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                            )
+                        }
+                        if (companyName.isNotBlank()) {
+                            Text(companyName, color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        }
                     }
-                    Text(companyName.ifBlank { "Grupo IDEA" }, color = Color.White, style = MaterialTheme.typography.labelSmall)
                 }
             }
             Column(Modifier.padding(10.dp)) {
@@ -1271,7 +1296,12 @@ private fun Timeline(events: List<EventEntity>) {
 }
 
 @Composable
-private fun ProjectInfoEditor(project: ProjectEntity?, onSave: (ProjectEntity) -> Unit) {
+private fun ProjectInfoEditor(
+    vm: AppViewModel,
+    project: ProjectEntity?,
+    referencePhotos: List<ProjectReferencePhotoEntity>,
+    onSave: (ProjectEntity) -> Unit
+) {
     if (project == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
@@ -1281,12 +1311,67 @@ private fun ProjectInfoEditor(project: ProjectEntity?, onSave: (ProjectEntity) -
     var responsible by remember(project.id, project.updatedAt) { mutableStateOf(project.responsible) }
     var notes by remember(project.id, project.updatedAt) { mutableStateOf(project.notes) }
     var status by remember(project.id, project.updatedAt) { mutableStateOf(project.status) }
+    var referenceError by remember { mutableStateOf<String?>(null) }
+    var importingReferences by remember { mutableStateOf(false) }
+
+    val referenceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isNotEmpty()) {
+            importingReferences = true
+            referenceError = null
+            vm.addProjectReferencePhotos(project.id, uris) { result ->
+                importingReferences = false
+                result.onFailure { referenceError = it.message ?: "No se pudieron agregar las imágenes" }
+            }
+        }
+    }
 
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        item {
+            SectionCard("Fotos del edificio · obligatorias para el PDF") {
+                Text(
+                    "Agregá una o más imágenes generales del edificio. Se usarán como referencia visual en la portada y el PDF no se generará si no hay ninguna.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (referencePhotos.isEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Falta al menos una imagen de referencia del edificio.",
+                            modifier = Modifier.padding(12.dp),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                } else {
+                    Text(
+                        "${referencePhotos.size} imagen(es) cargada(s). La portada mostrará hasta tres.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(items = referencePhotos, key = { it.id }) { photo ->
+                            ProjectReferencePhotoCard(photo) { vm.deleteProjectReferencePhoto(project.id, photo) }
+                        }
+                    }
+                }
+                Button(
+                    onClick = { referenceLauncher.launch("image/*") },
+                    enabled = !importingReferences
+                ) {
+                    Text(if (importingReferences) "Agregando…" else "Agregar imágenes del edificio")
+                }
+                referenceError?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         item {
             Row(
                 Modifier.horizontalScroll(rememberScrollState()),
@@ -1312,6 +1397,34 @@ private fun ProjectInfoEditor(project: ProjectEntity?, onSave: (ProjectEntity) -
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Guardar datos de obra") }
+        }
+    }
+}
+
+@Composable
+private fun ProjectReferencePhotoCard(
+    photo: ProjectReferencePhotoEntity,
+    onDelete: () -> Unit
+) {
+    val bitmap by rememberPhotoBitmap(photo.filePath, maxSide = 480)
+    ElevatedCard(Modifier.width(150.dp)) {
+        Column {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(105.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                bitmap?.let {
+                    androidx.compose.foundation.Image(
+                        bitmap = it,
+                        contentDescription = "Referencia del edificio",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                }
+            }
+            TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) { Text("Eliminar") }
         }
     }
 }
@@ -1364,13 +1477,17 @@ private fun BrandingDialog(
                             )
                         } else {
                             Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                                Text("IDEA", Modifier.padding(14.dp), fontWeight = FontWeight.Bold)
+                                Text("Sin logo", Modifier.padding(14.dp), style = MaterialTheme.typography.labelMedium)
                             }
                         }
                         Column(Modifier.weight(1f)) {
-                            Text(draft.companyName.ifBlank { "Grupo IDEA" }, fontWeight = FontWeight.Bold)
+                            if (draft.companyName.isNotBlank()) {
+                                Text(draft.companyName, fontWeight = FontWeight.Bold)
+                            } else {
+                                Text("Sin nombre de empresa", style = MaterialTheme.typography.bodySmall)
+                            }
                             Text(
-                                if (draft.logoPath.isBlank()) "Wordmark automático" else "Logo personalizado cargado",
+                                if (draft.logoPath.isBlank()) "Sin logo personalizado" else "Logo personalizado cargado",
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
@@ -1381,8 +1498,13 @@ private fun BrandingDialog(
                     value = draft.companyName,
                     onValueChange = { draft = draft.copy(companyName = it) },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Nombre de empresa") },
+                    label = { Text("Nombre de empresa (opcional)") },
                     singleLine = true
+                )
+                Text(
+                    "Podés dejarlo vacío para usar solo el logo o mostrar el sello sin nombre de empresa.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

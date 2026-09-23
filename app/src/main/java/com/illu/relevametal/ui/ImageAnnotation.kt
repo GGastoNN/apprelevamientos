@@ -233,6 +233,7 @@ fun AnnotatedPhoto(
 
 @Composable
 private fun BoxScope.PhotoStampOverlay(stamp: PhotoStampUi) {
+    if (stamp.companyName.isBlank() && stamp.logo == null && stamp.lines.none { it.isNotBlank() }) return
     Row(
         modifier = Modifier
             .align(Alignment.BottomEnd)
@@ -251,12 +252,14 @@ private fun BoxScope.PhotoStampOverlay(stamp: PhotoStampUi) {
             )
         }
         Column {
-            Text(
-                stamp.companyName,
-                color = Color.White,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold
-            )
+            if (stamp.companyName.isNotBlank()) {
+                Text(
+                    stamp.companyName,
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             stamp.lines.take(4).forEach { line ->
                 if (line.isNotBlank()) {
                     Text(line, color = Color.White, style = MaterialTheme.typography.labelSmall)
