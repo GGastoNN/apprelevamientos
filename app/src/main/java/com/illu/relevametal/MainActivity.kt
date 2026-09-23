@@ -21,7 +21,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            GrupoIdeaTheme {
+            val personalization by vm.personalization.collectAsState()
+            GrupoIdeaTheme(personalization) {
                 App(vm = vm)
             }
         }
