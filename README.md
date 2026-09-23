@@ -1,4 +1,4 @@
-# Grupo IDEA - Relevamientos — V0.7 Professional Field
+# Grupo IDEA - Relevamientos — V0.8 Referencias de obra
 
 Aplicación Android nativa, offline-first, para relevamientos diarios de obra orientados a carpintería metálica.
 
@@ -19,14 +19,14 @@ Aplicación Android nativa, offline-first, para relevamientos diarios de obra or
 
 Desde `Marca` en la pantalla principal se puede:
 
-- editar el nombre de empresa;
+- editar el nombre de empresa o dejarlo vacío para usar solo el logo / datos técnicos;
 - importar un logo PNG/JPG desde el teléfono;
 - activar/desactivar el sello;
 - decidir si el sello muestra fecha/hora, obra, sector y código de vano.
 
 El archivo fotográfico original se conserva sin modificar. La marca y las anotaciones se renderizan en la visualización, al compartir la foto y dentro del PDF.
 
-Si todavía no se cargó un logo gráfico, la app utiliza el wordmark `Grupo IDEA` como identificación visible.
+El nombre de empresa es opcional. Si se deja vacío, no se fuerza ningún texto corporativo en las fotografías ni en el encabezado del PDF.
 
 ## Herramientas incluidas
 
@@ -48,6 +48,7 @@ Si todavía no se cargó un logo gráfico, la app utiliza el wordmark `Grupo IDE
 - Incidencias rápidas vinculadas al vano y a la bitácora.
 - Bitácora automática y manual.
 - Compartir JPG técnico con marca y anotaciones.
+- Fotos generales del edificio obligatorias para generar el PDF; se muestran en la portada.
 - PDF profesional con todas las evidencias, fichas y bitácora.
 - Funcionamiento offline para relevamiento, fotos, base local y PDF.
 
@@ -63,5 +64,5 @@ La detección automática ubica candidatos visuales de vano, pero no convierte p
 - CameraX 1.4.1
 - compileSdk / targetSdk 35
 - Java 17
-- versionCode 4
-- versionName 0.7.0
+- versionCode 5
+- versionName 0.8.0
