@@ -19,6 +19,19 @@ data class ProjectEntity(
     @ColumnInfo(defaultValue = "''") val responsible: String = ""
 )
 
+
+@Entity(
+    tableName = "project_reference_photos",
+    foreignKeys = [ForeignKey(ProjectEntity::class, ["id"], ["projectId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("projectId")]
+)
+data class ProjectReferencePhotoEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val projectId: Long,
+    val filePath: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Entity(
     tableName = "spaces",
     foreignKeys = [ForeignKey(ProjectEntity::class, ["id"], ["projectId"], onDelete = ForeignKey.CASCADE)],

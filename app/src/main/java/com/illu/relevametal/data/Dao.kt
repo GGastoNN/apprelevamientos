@@ -21,6 +21,22 @@ interface ProjectDao {
     suspend fun delete(project: ProjectEntity)
 }
 
+
+@Dao
+interface ProjectReferencePhotoDao {
+    @Query("SELECT * FROM project_reference_photos WHERE projectId=:projectId ORDER BY createdAt")
+    fun observe(projectId: Long): Flow<List<ProjectReferencePhotoEntity>>
+
+    @Query("SELECT * FROM project_reference_photos WHERE projectId=:projectId ORDER BY createdAt")
+    suspend fun list(projectId: Long): List<ProjectReferencePhotoEntity>
+
+    @Insert
+    suspend fun insert(item: ProjectReferencePhotoEntity): Long
+
+    @Delete
+    suspend fun delete(item: ProjectReferencePhotoEntity)
+}
+
 @Dao
 interface SpaceDao {
     @Query("SELECT * FROM spaces WHERE projectId=:projectId ORDER BY createdAt")
