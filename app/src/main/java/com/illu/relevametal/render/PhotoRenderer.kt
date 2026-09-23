@@ -168,6 +168,16 @@ object PhotoRenderer {
         evidence: EvidenceEntity,
         branding: BrandingSettings
     ) {
+        val companyName = branding.companyName.trim()
+        val lines = buildList {
+            if (branding.showProject) add("Obra: ${project.name}")
+            if (branding.showSpace) add("Sector: ${space.name}")
+            if (branding.showOpening) add("Vano: ${opening.code} · ${phaseLabel(evidence.phase)}")
+            if (branding.showTimestamp) add(SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(evidence.createdAt)))
+        }
+        val hasLogo = branding.logoPath.isNotBlank() && File(branding.logoPath).exists()
+        if (companyName.isBlank() && lines.none { it.isNotBlank() } && !hasLogo) return
+
         val w = bitmap.width.toFloat()
         val h = bitmap.height.toFloat()
         val margin = (w * 0.018f).coerceAtLeast(8f).coerceAtMost(w * 0.08f)
@@ -182,7 +192,7 @@ object PhotoRenderer {
         canvas.drawRoundRect(RectF(left, top, right, bottom), 18f, 18f, bg)
 
         var textLeft = left + 22f
-        val logo = branding.logoPath.takeIf { it.isNotBlank() && File(it).exists() }
+        val logo = branding.logoPath.takeIf { hasLogo }
             ?.let { BitmapFactory.decodeFile(it) }
         if (logo != null) {
             val side = panelHeight - 30f
@@ -207,13 +217,12 @@ object PhotoRenderer {
             textSize = bodySize
         }
 
-        var y = top + 34f + titleSize * 0.2f
-        canvas.drawText(branding.companyName.ifBlank { "Grupo IDEA" }, textLeft, y, title)
-        val lines = buildList {
-            if (branding.showProject) add("Obra: ${project.name}")
-            if (branding.showSpace) add("Sector: ${space.name}")
-            if (branding.showOpening) add("Vano: ${opening.code} · ${phaseLabel(evidence.phase)}")
-            if (branding.showTimestamp) add(SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(evidence.createdAt)))
+        var y = top + 28f
+        if (companyName.isNotBlank()) {
+            y += titleSize * 0.2f
+            canvas.drawText(companyName, textLeft, y, title)
+        } else {
+            y -= bodySize * 0.15f
         }
         lines.take(4).forEach { lineText ->
             y += bodySize * 1.23f
