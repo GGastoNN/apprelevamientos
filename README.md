@@ -1,4 +1,4 @@
-# Grupo IDEA - Relevamientos — V0.9 PDF compacto
+# Grupo IDEA - Relevamientos — V1.0 transferencia de datos
 
 Aplicación Android nativa, offline-first, para relevamientos diarios de obra orientados a carpintería metálica.
 
@@ -66,5 +66,9 @@ La detección automática ubica candidatos visuales de vano, pero no convierte p
 - CameraX 1.4.1
 - compileSdk / targetSdk 35
 - Java 17
-- versionCode 6
-- versionName 0.9.0
+- versionCode 8
+- versionName 1.0.1
+
+## Transferencia entre dispositivos (v1.0)
+
+La aplicación puede exportar una obra o todas las obras a un archivo `*.gidea` e importarlo en otro dispositivo con la misma aplicación. El respaldo contiene la estructura completa del relevamiento y todas las fotografías originales con sus cotas/anotaciones. Las obras importadas se agregan como nuevas, sin sobrescribir las existentes.

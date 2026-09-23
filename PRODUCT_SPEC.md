@@ -1,4 +1,4 @@
-# Grupo IDEA - Relevamientos — Especificación funcional V0.9
+# Grupo IDEA - Relevamientos — Especificación funcional V1.0
 
 ## Principio
 
@@ -73,3 +73,14 @@ Desde cada vano se puede registrar rápidamente una incidencia con título, deta
 ## Persistencia
 
 Room schema 5 con migraciones 1→2, 2→3, 3→4 y 4→5. La migración 4→5 agrega las fotografías generales de referencia del edificio sin eliminar datos previos.
+
+
+## Transferencia portable de obras
+
+- Desde una obra se puede exportar únicamente ese proyecto.
+- Desde el dashboard se pueden exportar todas las obras en un único archivo `*.gidea`.
+- El archivo es versionado y contiene la jerarquía completa de Room, la bitácora, fotografías generales y evidencias.
+- Las fotografías se guardan como originales y las cotas/anotaciones se transfieren como metadatos, evitando duplicar una versión renderizada de cada imagen.
+- La importación reasigna IDs locales y reconstruye relaciones entre obra, espacios, vanos, evidencias y eventos.
+- Importar nunca sobrescribe obras existentes: crea copias independientes en el dispositivo destino.
+- El formato queda preparado para evolucionar hacia sincronización remota; los IDs locales no se consideran identificadores globales.
