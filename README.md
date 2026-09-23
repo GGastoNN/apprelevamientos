@@ -1,4 +1,4 @@
-# Grupo IDEA - Relevamientos — V0.8 Referencias de obra
+# Grupo IDEA - Relevamientos — V0.9 PDF compacto
 
 Aplicación Android nativa, offline-first, para relevamientos diarios de obra orientados a carpintería metálica.
 
@@ -49,7 +49,9 @@ El nombre de empresa es opcional. Si se deja vacío, no se fuerza ningún texto 
 - Bitácora automática y manual.
 - Compartir JPG técnico con marca y anotaciones.
 - Fotos generales del edificio obligatorias para generar el PDF; se muestran en la portada.
-- PDF profesional con todas las evidencias, fichas y bitácora.
+- PDF compacto: una ficha por vano con medidas y la foto seleccionada en la misma hoja.
+- Antes de exportar se puede elegir qué foto incluir en cada vano; por defecto se selecciona la última tomada.
+- Se puede omitir la foto de un vano para reducir todavía más el peso del archivo.
 - Funcionamiento offline para relevamiento, fotos, base local y PDF.
 
 ## Medición fotográfica
@@ -64,5 +66,5 @@ La detección automática ubica candidatos visuales de vano, pero no convierte p
 - CameraX 1.4.1
 - compileSdk / targetSdk 35
 - Java 17
-- versionCode 5
-- versionName 0.8.0
+- versionCode 6
+- versionName 0.9.0

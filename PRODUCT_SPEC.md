@@ -1,4 +1,4 @@
-# Grupo IDEA - Relevamientos — Especificación funcional V0.7
+# Grupo IDEA - Relevamientos — Especificación funcional V0.9
 
 ## Principio
 
@@ -62,10 +62,14 @@ Desde cada vano se puede registrar rápidamente una incidencia con título, deta
 
 ## Exportación
 
-- PDF completo por obra.
+- PDF compacto por obra: portada con referencias del edificio y una ficha por vano.
+- Antes de generar el PDF se elige qué fotografía incluir en cada vano; la selección inicial es siempre la evidencia más reciente.
+- Es posible omitir una fotografía para reducir todavía más el peso del informe.
+- La ficha PDF integra medidas, controles, observaciones y fotografía en una misma hoja.
+- Las imágenes del PDF se limitan a una resolución adecuada para impresión A4 para evitar archivos innecesariamente pesados.
 - JPG técnico individual para compartir desde Android.
 - Ambas salidas respetan rotación, anotaciones y marca configurada.
 
 ## Persistencia
 
-Room schema 4 con migraciones 1→2, 2→3 y 3→4. La migración 3→4 agrega la etapa fotográfica sin eliminar datos previos.
+Room schema 5 con migraciones 1→2, 2→3, 3→4 y 4→5. La migración 4→5 agrega las fotografías generales de referencia del edificio sin eliminar datos previos.
