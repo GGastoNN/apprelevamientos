@@ -12,6 +12,7 @@ import com.illu.relevametal.data.*
 import com.illu.relevametal.detection.OpeningDetector
 import com.illu.relevametal.pdf.ReportPdf
 import com.illu.relevametal.render.PhotoRenderer
+import com.illu.relevametal.transfer.ProjectArchiveManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -41,6 +42,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val db = AppDatabase.get(app)
     private val detector = OpeningDetector()
     private val brandingStore = BrandingStore(app)
+    private val archiveManager = ProjectArchiveManager(app, db)
     val branding = MutableStateFlow(brandingStore.load())
 
     val projects = db.projects()
@@ -533,6 +535,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 ReportPdf(getApplication()).generate(project, spaces, events, branding.value, referencePhotos)
             }
+        }
+        onReady(result)
+    }
+
+
+    fun exportDataArchive(
+        projectIds: List<Long>,
+        onReady: (Result<File>) -> Unit
+    ) = viewModelScope.launch {
+        val result = withContext(Dispatchers.IO) {
+            runCatching { archiveManager.export(projectIds) }
+        }
+        onReady(result)
+    }
+
+    fun importDataArchive(
+        uri: Uri,
+        onReady: (Result<ProjectArchiveManager.ImportResult>) -> Unit
+    ) = viewModelScope.launch {
+        val result = withContext(Dispatchers.IO) {
+            runCatching { archiveManager.import(uri) }
         }
         onReady(result)
     }

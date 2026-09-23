@@ -47,13 +47,36 @@ private val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault(
 @Composable
 fun ProjectsScreen(
     vm: AppViewModel,
-    onOpen: (Long) -> Unit
+    onOpen: (Long) -> Unit,
+    onShareData: (java.io.File) -> Unit
 ) {
     val projects by vm.projects.collectAsState()
     var query by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("TODAS") }
     var newProject by remember { mutableStateOf(false) }
     var showBranding by remember { mutableStateOf(false) }
+    var showDataTools by remember { mutableStateOf(false) }
+    var dataBusy by remember { mutableStateOf(false) }
+    var dataError by remember { mutableStateOf<String?>(null) }
+    var dataMessage by remember { mutableStateOf<String?>(null) }
+
+    val importDataLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            dataBusy = true
+            showDataTools = false
+            vm.importDataArchive(uri) { result ->
+                dataBusy = false
+                result.onSuccess { imported ->
+                    val totalPhotos = imported.evidencePhotos + imported.referencePhotos
+                    dataMessage = "Importación completa: ${imported.projects} obra(s), ${imported.spaces} espacio(s), ${imported.openings} vano(s) y $totalPhotos foto(s)."
+                }.onFailure {
+                    dataError = it.message ?: "No se pudo importar el archivo"
+                }
+            }
+        }
+    }
 
     val filtered = remember(projects, query, status) {
         projects.filter { project ->
@@ -98,6 +121,7 @@ fun ProjectsScreen(
                     }
                 },
                 actions = {
+                    TextButton(onClick = { showDataTools = true }) { Text("Datos") }
                     TextButton(onClick = { showBranding = true }) { Text("Marca") }
                 }
             )
@@ -178,6 +202,122 @@ fun ProjectsScreen(
     if (showBranding) {
         BrandingDialog(vm = vm, onDismiss = { showBranding = false })
     }
+
+    if (showDataTools) {
+        DataTransferDialog(
+            projectCount = projects.size,
+            busy = dataBusy,
+            onDismiss = { if (!dataBusy) showDataTools = false },
+            onExportAll = {
+                if (projects.isEmpty()) return@DataTransferDialog
+                dataBusy = true
+                vm.exportDataArchive(projects.map { it.id }) { result ->
+                    dataBusy = false
+                    result.onSuccess { file ->
+                        showDataTools = false
+                        onShareData(file)
+                    }.onFailure {
+                        showDataTools = false
+                        dataError = it.message ?: "No se pudo crear el archivo de transferencia"
+                    }
+                }
+            },
+            onImport = {
+                importDataLauncher.launch(
+                    arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
+                )
+            }
+        )
+    }
+
+    if (dataBusy && !showDataTools) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            title = { Text("Importando datos") },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(Modifier.size(26.dp), strokeWidth = 2.5.dp)
+                    Text("Copiando obras, fotografías y cotas…")
+                }
+            }
+        )
+    }
+
+    dataError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { dataError = null },
+            confirmButton = { TextButton(onClick = { dataError = null }) { Text("Aceptar") } },
+            title = { Text("Transferencia de datos") },
+            text = { Text(message) }
+        )
+    }
+
+    dataMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { dataMessage = null },
+            confirmButton = { TextButton(onClick = { dataMessage = null }) { Text("Aceptar") } },
+            title = { Text("Datos importados") },
+            text = { Text(message) }
+        )
+    }
+}
+
+@Composable
+private fun DataTransferDialog(
+    projectCount: Int,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onExportAll: () -> Unit,
+    onImport: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) { Text("Cerrar") }
+        },
+        title = { Text("Transferencia de datos") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Podés mover las obras completas a otro dispositivo con RelevaMetal. " +
+                        "El archivo .gidea incluye espacios, vanos, medidas, controles, bitácora, fotos originales, cotas y anotaciones."
+                )
+                if (busy) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                        Text("Procesando archivo…")
+                    }
+                }
+                Button(
+                    onClick = onExportAll,
+                    enabled = !busy && projectCount > 0,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (projectCount == 1) "Exportar la obra" else "Exportar todas las obras ($projectCount)")
+                }
+                OutlinedButton(
+                    onClick = onImport,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Importar archivo de datos")
+                }
+                Text(
+                    "Al importar, las obras se agregan como nuevas y no reemplazan las que ya existen en el dispositivo.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    )
 }
 
 @Composable
@@ -225,7 +365,8 @@ fun ProjectScreen(
     projectId: Long,
     onBack: () -> Unit,
     onOpenSpace: (Long) -> Unit,
-    onSharePdf: (java.io.File) -> Unit
+    onSharePdf: (java.io.File) -> Unit,
+    onShareData: (java.io.File) -> Unit
 ) {
     val spaces by vm.spaces(projectId).collectAsState(initial = emptyList())
     val events by vm.events(projectId).collectAsState(initial = emptyList())
@@ -240,6 +381,9 @@ fun ProjectScreen(
     var pdfChoices by remember { mutableStateOf<List<PdfOpeningPhotoChoice>>(emptyList()) }
     var showPdfExportDialog by remember { mutableStateOf(false) }
     var exportError by remember { mutableStateOf<String?>(null) }
+    var showProjectDataDialog by remember { mutableStateOf(false) }
+    var dataExporting by remember { mutableStateOf(false) }
+    var dataExportError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(projectId) { project = vm.project(projectId) }
     val p = project
@@ -260,7 +404,13 @@ fun ProjectScreen(
                 },
                 actions = {
                     TextButton(
-                        enabled = !exporting && !loadingPdfChoices,
+                        enabled = !dataExporting,
+                        onClick = { showProjectDataDialog = true }
+                    ) {
+                        Text(if (dataExporting) "Exportando…" else "Datos")
+                    }
+                    TextButton(
+                        enabled = !exporting && !loadingPdfChoices && !dataExporting,
                         onClick = {
                             loadingPdfChoices = true
                             vm.loadPdfPhotoChoices(projectId) { result ->
@@ -399,6 +549,59 @@ fun ProjectScreen(
                         .onFailure { exportError = it.message ?: "No se pudo generar el PDF" }
                 }
             }
+        )
+    }
+
+    if (showProjectDataDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!dataExporting) showProjectDataDialog = false },
+            confirmButton = {
+                TextButton(
+                    enabled = !dataExporting,
+                    onClick = {
+                        dataExporting = true
+                        vm.exportDataArchive(listOf(projectId)) { result ->
+                            dataExporting = false
+                            result.onSuccess { file ->
+                                showProjectDataDialog = false
+                                onShareData(file)
+                            }.onFailure {
+                                showProjectDataDialog = false
+                                dataExportError = it.message ?: "No se pudo exportar la obra"
+                            }
+                        }
+                    }
+                ) { Text(if (dataExporting) "Exportando…" else "Exportar obra") }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !dataExporting,
+                    onClick = { showProjectDataDialog = false }
+                ) { Text("Cancelar") }
+            },
+            title = { Text("Exportar datos de la obra") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Se generará un archivo .gidea portable con toda la obra: espacios, vanos, medidas, controles, bitácora, " +
+                            "fotos generales, fotos de cada vano y todas sus cotas y anotaciones."
+                    )
+                    Text(
+                        "Las fotos se guardan una sola vez junto con sus datos técnicos para evitar duplicar peso innecesariamente.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        )
+    }
+
+    dataExportError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { dataExportError = null },
+            confirmButton = { TextButton(onClick = { dataExportError = null }) { Text("Aceptar") } },
+            title = { Text("No se pudo exportar la obra") },
+            text = { Text(message) }
         )
     }
 
