@@ -236,6 +236,9 @@ fun ProjectScreen(
     var showSpaceDialog by remember { mutableStateOf(false) }
     var showEventDialog by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
+    var loadingPdfChoices by remember { mutableStateOf(false) }
+    var pdfChoices by remember { mutableStateOf<List<PdfOpeningPhotoChoice>>(emptyList()) }
+    var showPdfExportDialog by remember { mutableStateOf(false) }
     var exportError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(projectId) { project = vm.project(projectId) }
@@ -257,17 +260,27 @@ fun ProjectScreen(
                 },
                 actions = {
                     TextButton(
-                        enabled = !exporting,
+                        enabled = !exporting && !loadingPdfChoices,
                         onClick = {
-                            exporting = true
-                            vm.exportProject(projectId) { result ->
-                                exporting = false
-                                result.onSuccess(onSharePdf)
-                                    .onFailure { exportError = it.message ?: "No se pudo generar el PDF" }
+                            loadingPdfChoices = true
+                            vm.loadPdfPhotoChoices(projectId) { result ->
+                                loadingPdfChoices = false
+                                result.onSuccess { choices ->
+                                    pdfChoices = choices
+                                    showPdfExportDialog = true
+                                }.onFailure {
+                                    exportError = it.message ?: "No se pudo preparar el PDF"
+                                }
                             }
                         }
                     ) {
-                        Text(if (exporting) "Generando…" else "PDF")
+                        Text(
+                            when {
+                                exporting -> "Generando…"
+                                loadingPdfChoices -> "Preparando…"
+                                else -> "PDF"
+                            }
+                        )
                     }
                 }
             )
@@ -373,6 +386,22 @@ fun ProjectScreen(
         )
     }
 
+    if (showPdfExportDialog) {
+        PdfExportDialog(
+            choices = pdfChoices,
+            onDismiss = { showPdfExportDialog = false },
+            onGenerate = { selection ->
+                showPdfExportDialog = false
+                exporting = true
+                vm.exportProject(projectId, selection) { result ->
+                    exporting = false
+                    result.onSuccess(onSharePdf)
+                        .onFailure { exportError = it.message ?: "No se pudo generar el PDF" }
+                }
+            }
+        )
+    }
+
     exportError?.let { message ->
         AlertDialog(
             onDismissRequest = { exportError = null },
@@ -382,6 +411,270 @@ fun ProjectScreen(
             title = { Text("No se pudo generar el informe") },
             text = { Text(message) }
         )
+    }
+}
+
+@Composable
+private fun PdfExportDialog(
+    choices: List<PdfOpeningPhotoChoice>,
+    onDismiss: () -> Unit,
+    onGenerate: (Map<Long, Long?>) -> Unit
+) {
+    var selections by remember(choices) {
+        mutableStateOf<Map<Long, Long?>>(choices.associate { it.openingId to it.defaultEvidenceId })
+    }
+    var picking by remember { mutableStateOf<PdfOpeningPhotoChoice?>(null) }
+
+    val currentPicker = picking
+    if (currentPicker != null) {
+        PdfPhotoPickerDialog(
+            choice = currentPicker,
+            selectedEvidenceId = selections[currentPicker.openingId],
+            onDismiss = { picking = null },
+            onSelect = { evidenceId ->
+                selections = selections.toMutableMap().apply {
+                    put(currentPicker.openingId, evidenceId)
+                }
+                picking = null
+            }
+        )
+        return
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = { onGenerate(selections) }) { Text("Generar PDF") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        },
+        title = { Text("Preparar PDF") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Para reducir hojas y peso, el informe incluye como máximo una foto por vano. " +
+                        "Por defecto queda seleccionada la última foto tomada; podés cambiarla u omitirla."
+                )
+                if (choices.isEmpty()) {
+                    Text(
+                        "La obra todavía no tiene vanos. Se generará la portada y la información disponible.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 480.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(items = choices, key = { it.openingId }) { choice ->
+                            PdfOpeningPhotoRow(
+                                choice = choice,
+                                selectedEvidenceId = selections[choice.openingId],
+                                onChange = { if (choice.photos.isNotEmpty()) picking = choice }
+                            )
+                        }
+                    }
+                }
+                Text(
+                    "El PDF usa una ficha compacta por vano con medidas y foto en la misma hoja.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun PdfOpeningPhotoRow(
+    choice: PdfOpeningPhotoChoice,
+    selectedEvidenceId: Long?,
+    onChange: () -> Unit
+) {
+    val selected = choice.photos.firstOrNull { it.id == selectedEvidenceId }
+    val bitmap by rememberPhotoBitmap(
+        path = selected?.filePath.orEmpty(),
+        maxSide = 260,
+        rotationDegrees = selected?.rotationDegrees ?: 0
+    )
+
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                Modifier
+                    .size(width = 78.dp, height = 68.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                if (bitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = bitmap!!,
+                        contentDescription = "Foto elegida para ${choice.openingCode}",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        if (selected == null) "Sin foto" else "—",
+                        modifier = Modifier.align(Alignment.Center),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
+
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(choice.openingCode, fontWeight = FontWeight.SemiBold)
+                Text(choice.spaceName, style = MaterialTheme.typography.bodySmall)
+                if (selected != null) {
+                    Text(
+                        "${phaseLabel(selected.phase)} · ${dateFormat.format(Date(selected.createdAt))}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (selected.id == choice.defaultEvidenceId) {
+                        Text(
+                            "Última foto · selección predeterminada",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                } else {
+                    Text(
+                        if (choice.photos.isEmpty()) "Este vano no tiene fotografías" else "No se incluirá fotografía",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            TextButton(
+                onClick = onChange,
+                enabled = choice.photos.isNotEmpty()
+            ) { Text("Cambiar") }
+        }
+    }
+}
+
+@Composable
+private fun PdfPhotoPickerDialog(
+    choice: PdfOpeningPhotoChoice,
+    selectedEvidenceId: Long?,
+    onDismiss: () -> Unit,
+    onSelect: (Long?) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        },
+        title = { Text("Foto para ${choice.openingCode}") },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 520.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(null) },
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Row(
+                            Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedEvidenceId == null,
+                                onClick = { onSelect(null) }
+                            )
+                            Column {
+                                Text("No incluir foto", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Reduce todavía más el tamaño del informe.",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                    }
+                }
+
+                items(items = choice.photos, key = { it.id }) { photo ->
+                    PdfPhotoPickerRow(
+                        photo = photo,
+                        isSelected = photo.id == selectedEvidenceId,
+                        isLatest = photo.id == choice.defaultEvidenceId,
+                        onClick = { onSelect(photo.id) }
+                    )
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun PdfPhotoPickerRow(
+    photo: EvidenceEntity,
+    isSelected: Boolean,
+    isLatest: Boolean,
+    onClick: () -> Unit
+) {
+    val bitmap by rememberPhotoBitmap(
+        path = photo.filePath,
+        maxSide = 320,
+        rotationDegrees = photo.rotationDegrees
+    )
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        tonalElevation = if (isSelected) 3.dp else 0.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            RadioButton(selected = isSelected, onClick = onClick)
+            Box(
+                Modifier
+                    .size(width = 92.dp, height = 72.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                bitmap?.let {
+                    androidx.compose.foundation.Image(
+                        bitmap = it,
+                        contentDescription = "Fotografía del vano",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    if (isLatest) "Última foto" else phaseLabel(photo.phase),
+                    fontWeight = if (isLatest) FontWeight.SemiBold else FontWeight.Normal
+                )
+                Text(
+                    "${phaseLabel(photo.phase)} · ${dateFormat.format(Date(photo.createdAt))}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (photo.caption.isNotBlank()) {
+                    Text(
+                        photo.caption,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -26,6 +26,17 @@ data class ProjectStats(
     val photos: Int = 0
 )
 
+
+data class PdfOpeningPhotoChoice(
+    val openingId: Long,
+    val openingCode: String,
+    val spaceName: String,
+    val photos: List<EvidenceEntity>
+) {
+    val defaultEvidenceId: Long?
+        get() = photos.maxByOrNull { it.createdAt }?.id
+}
+
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     val db = AppDatabase.get(app)
     private val detector = OpeningDetector()
@@ -457,8 +468,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         touchProject(projectId)
     }
 
+    fun loadPdfPhotoChoices(
+        projectId: Long,
+        onReady: (Result<List<PdfOpeningPhotoChoice>>) -> Unit
+    ) = viewModelScope.launch {
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                val project = db.projects().project(projectId) ?: error("Obra inexistente")
+                val referencePhotos = db.projectReferencePhotos()
+                    .list(project.id)
+                    .filter { File(it.filePath).isFile }
+                require(referencePhotos.isNotEmpty()) {
+                    "Para generar el PDF agregá al menos una imagen válida del edificio en la pestaña Obra."
+                }
+
+                db.spaces().list(projectId).flatMap { space ->
+                    db.openings().list(space.id).map { opening ->
+                        val photos = db.evidence().list(opening.id)
+                            .filter { File(it.filePath).isFile }
+                            .sortedByDescending { it.createdAt }
+                        PdfOpeningPhotoChoice(
+                            openingId = opening.id,
+                            openingCode = opening.code,
+                            spaceName = space.name,
+                            photos = photos
+                        )
+                    }
+                }
+            }
+        }
+        onReady(result)
+    }
+
     fun exportProject(
         projectId: Long,
+        selectedEvidenceIds: Map<Long, Long?>,
         onReady: (Result<File>) -> Unit
     ) = viewModelScope.launch {
         val result = withContext(Dispatchers.IO) {
@@ -466,7 +510,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val project = db.projects().project(projectId) ?: error("Obra inexistente")
                 val spaces = db.spaces().list(projectId).map { space ->
                     val openings = db.openings().list(space.id).map { opening ->
-                        ReportPdf.OpeningBundle(opening, db.evidence().list(opening.id))
+                        val allEvidence = db.evidence().list(opening.id)
+                            .filter { File(it.filePath).isFile }
+                        val selectedId = if (selectedEvidenceIds.containsKey(opening.id)) {
+                            selectedEvidenceIds[opening.id]
+                        } else {
+                            allEvidence.maxByOrNull { it.createdAt }?.id
+                        }
+                        val selected = selectedId?.let { id ->
+                            allEvidence.firstOrNull { it.id == id }
+                        }
+                        ReportPdf.OpeningBundle(opening, listOfNotNull(selected))
                     }
                     ReportPdf.SpaceBundle(space, openings)
                 }
