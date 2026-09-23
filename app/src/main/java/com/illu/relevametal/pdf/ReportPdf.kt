@@ -92,59 +92,23 @@ class ReportPdf(private val context: Context) {
         finish(page)
 
         for (space in spaces) {
-            val started = startPage("ESPACIO / SECTOR")
-            page = started.first
-            canvas = started.second
-            var y = 102f
-            canvas.drawText(space.space.name, margin, y, titlePaint)
-            y += 24f
-            val contextLine = listOf(space.space.level, space.space.sector)
-                .filter { it.isNotBlank() }
-                .joinToString(" · ")
-            if (contextLine.isNotBlank()) {
-                canvas.drawText(contextLine, margin, y, bodyPaint)
-                y += 18f
-            }
-            if (space.space.notes.isNotBlank()) {
-                y = drawWrapped(canvas, space.space.notes, margin, y, pageWidth - margin * 2, bodyPaint)
-                y += 10f
-            }
-            canvas.drawLine(margin, y, pageWidth - margin, y, linePaint)
-            y += 18f
-            canvas.drawText("Vanos registrados: ${space.openings.size}", margin, y, h2Paint)
-            y += 20f
+            if (space.openings.isEmpty()) continue
 
-            if (space.openings.isEmpty()) {
-                canvas.drawText("Sin vanos registrados en este espacio.", margin, y, bodyPaint)
-            } else {
-                space.openings.forEach { bundle ->
-                    if (y > 720f) {
-                        finish(page)
-                        val next = startPage("ESPACIO / SECTOR · ${space.space.name}")
-                        page = next.first
-                        canvas = next.second
-                        y = 104f
-                    }
-                    y = drawOpeningSummary(canvas, bundle.opening, bundle.evidence.size, y)
-                    y += 12f
-                }
-            }
-            finish(page)
-
-            for (bundle in space.openings) {
-                val openingPage = startPage("FICHA DE VANO · ${bundle.opening.code}")
+            space.openings.forEachIndexed { index, bundle ->
+                val openingPage = startPage("VANO · ${bundle.opening.code} · ${space.space.name}")
                 page = openingPage.first
                 canvas = openingPage.second
-                drawOpeningDetail(canvas, space.space, bundle.opening)
+                drawOpeningSheet(
+                    canvas = canvas,
+                    project = project,
+                    space = space.space,
+                    opening = bundle.opening,
+                    selectedEvidence = bundle.evidence.firstOrNull(),
+                    branding = branding,
+                    indexInSpace = index + 1,
+                    openingsInSpace = space.openings.size
+                )
                 finish(page)
-
-                bundle.evidence.forEachIndexed { index, evidence ->
-                    val photoPage = startPage("EVIDENCIA · ${bundle.opening.code} · Foto ${index + 1}/${bundle.evidence.size}")
-                    page = photoPage.first
-                    canvas = photoPage.second
-                    drawEvidencePage(canvas, project, space.space, bundle.opening, evidence, branding)
-                    finish(page)
-                }
             }
         }
 
@@ -274,7 +238,7 @@ class ReportPdf(private val context: Context) {
         y += 21f
         canvas.drawText("Espacios / sectores: ${spaces.size} · Vanos: $openingCount", margin, y, bodyPaint)
         y += 16f
-        canvas.drawText("Fotos de vanos: $evidenceCount · Referencias del edificio: ${referencePhotos.size} · Eventos: ${events.size}", margin, y, bodyPaint)
+        canvas.drawText("Fotos incluidas: $evidenceCount · Referencias del edificio: ${referencePhotos.size} · Eventos: ${events.size}", margin, y, bodyPaint)
         y += 24f
 
         if (project.notes.isNotBlank() && y < 740f) {
@@ -326,7 +290,7 @@ class ReportPdf(private val context: Context) {
         shown.forEachIndexed { index, photo ->
             val left = margin + index * (cellWidth + gap)
             val dst = RectF(left, top, left + cellWidth, top + height)
-            val bitmap = decodeSampledBitmap(photo.filePath, 1400)
+            val bitmap = decodeSampledBitmap(photo.filePath, 900)
             if (bitmap != null) {
                 drawBitmapCenterCrop(canvas, bitmap, dst)
                 bitmap.recycle()
@@ -351,6 +315,160 @@ class ReportPdf(private val context: Context) {
             Rect(0, top, bitmap.width, (top + wantedHeight).coerceAtMost(bitmap.height))
         }
         canvas.drawBitmap(bitmap, src, dst, null)
+    }
+
+    private fun drawOpeningSheet(
+        canvas: Canvas,
+        project: ProjectEntity,
+        space: SpaceEntity,
+        opening: OpeningEntity,
+        selectedEvidence: EvidenceEntity?,
+        branding: BrandingSettings,
+        indexInSpace: Int,
+        openingsInSpace: Int
+    ) {
+        var y = 94f
+        canvas.drawText("${opening.code} · ${opening.type}", margin, y, titlePaint)
+        y += 20f
+        canvas.drawText(
+            "Espacio: ${space.name} · Vano $indexInSpace de $openingsInSpace · ${statusLabel(opening.status)}",
+            margin,
+            y,
+            bodyPaint
+        )
+        y += 14f
+        val contextLine = listOf(space.level, space.sector).filter { it.isNotBlank() }.joinToString(" · ")
+        if (contextLine.isNotBlank()) {
+            canvas.drawText(contextLine, margin, y, smallPaint)
+            y += 13f
+        }
+        canvas.drawLine(margin, y + 2f, pageWidth - margin, y + 2f, linePaint)
+        y += 22f
+
+        val gap = 18f
+        val leftWidth = 248f
+        val rightX = margin + leftWidth + gap
+        val rightWidth = pageWidth - margin - rightX
+        val contentTop = y
+
+        var leftY = contentTop
+        canvas.drawText("MEDIDAS", margin, leftY, h2Paint)
+        leftY += 18f
+        val measurementRows = listOf(
+            "Ancho: ${mm(opening.widthMm)}   Alto: ${mm(opening.heightMm)}",
+            "Antepecho: ${mm(opening.sillMm)}",
+            "Diagonal 1: ${mm(opening.diagonal1Mm)}",
+            "Diagonal 2: ${mm(opening.diagonal2Mm)}",
+            "Espesor muro: ${mm(opening.wallThicknessMm)}",
+            "Profundidad: ${mm(opening.depthMm)}",
+            "Libre izq.: ${mm(opening.clearanceLeftMm)}",
+            "Libre der.: ${mm(opening.clearanceRightMm)}",
+            "Libre sup.: ${mm(opening.clearanceTopMm)}",
+            "Libre inf.: ${mm(opening.clearanceBottomMm)}"
+        )
+        measurementRows.forEach { row ->
+            canvas.drawText(row, margin, leftY, bodyPaint)
+            leftY += 14f
+        }
+
+        leftY += 10f
+        canvas.drawText("CONTROL DEL VANO", margin, leftY, h2Paint)
+        leftY += 18f
+        val checks = listOf(
+            "Plomo" to opening.plumbState,
+            "Nivel" to opening.levelState,
+            "Escuadra" to opening.squareState,
+            "Piso" to opening.floorState,
+            "Revoque" to opening.plasterState,
+            "Premarco" to opening.premarcoState
+        )
+        checks.chunked(2).forEach { pair ->
+            val text = pair.joinToString("   ·   ") { (label, value) -> "$label: ${checkLabel(value)}" }
+            canvas.drawText(text, margin, leftY, smallPaint)
+            leftY += 14f
+        }
+
+        var rightY = contentTop
+        canvas.drawText("FOTO PARA EL INFORME", rightX, rightY, h2Paint)
+        rightY += 10f
+        val photoBox = RectF(rightX, rightY, rightX + rightWidth, rightY + 278f)
+        val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(205, 216, 212)
+            style = Paint.Style.STROKE
+            strokeWidth = 1f
+        }
+        val photoBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(244, 247, 246) }
+        canvas.drawRect(photoBox, photoBg)
+
+        if (selectedEvidence != null) {
+            val annotated = PhotoRenderer.render(
+                evidence = selectedEvidence,
+                project = project,
+                space = space,
+                opening = opening,
+                branding = branding,
+                maxSide = 1200
+            )
+            if (annotated != null) {
+                drawBitmapFitCenter(canvas, annotated, photoBox)
+                annotated.recycle()
+            } else {
+                canvas.drawText("Imagen no disponible", rightX + 10f, photoBox.centerY(), smallPaint)
+            }
+        } else {
+            canvas.drawText("Sin foto incluida", rightX + 10f, photoBox.centerY(), smallPaint)
+        }
+        canvas.drawRect(photoBox, border)
+        rightY = photoBox.bottom + 15f
+
+        if (selectedEvidence != null) {
+            canvas.drawText(
+                "${phaseLabel(selectedEvidence.phase)} · ${formatDate(selectedEvidence.createdAt)}",
+                rightX,
+                rightY,
+                smallPaint
+            )
+            rightY += 14f
+            if (selectedEvidence.caption.isNotBlank()) {
+                rightY = drawWrapped(canvas, selectedEvidence.caption, rightX, rightY, rightWidth, bodyPaint, 3)
+            }
+            val measureCount = AnnotationCodec.decodeMeasurements(selectedEvidence.annotationJson).size
+            val markupCount = AnnotationCodec.decodeMarkups(selectedEvidence.annotationJson).size
+            rightY += 4f
+            canvas.drawText("Cotas: $measureCount · Marcas: $markupCount", rightX, rightY, smallPaint)
+            rightY += 12f
+        }
+
+        y = maxOf(leftY, rightY) + 16f
+        canvas.drawLine(margin, y, pageWidth - margin, y, linePaint)
+        y += 20f
+
+        if (opening.openingDirection.isNotBlank()) {
+            canvas.drawText("Apertura / condición", margin, y, h2Paint)
+            y += 15f
+            y = drawWrapped(canvas, opening.openingDirection, margin, y, pageWidth - margin * 2, bodyPaint, 2)
+            y += 7f
+        }
+        if (opening.interference.isNotBlank() && y < 742f) {
+            canvas.drawText("Interferencias", margin, y, h2Paint)
+            y += 15f
+            y = drawWrapped(canvas, opening.interference, margin, y, pageWidth - margin * 2, bodyPaint, 3)
+            y += 7f
+        }
+        if (opening.notes.isNotBlank() && y < 755f) {
+            canvas.drawText("Observaciones", margin, y, h2Paint)
+            y += 15f
+            drawWrapped(canvas, opening.notes, margin, y, pageWidth - margin * 2, bodyPaint, 4)
+        }
+    }
+
+    private fun drawBitmapFitCenter(canvas: Canvas, bitmap: Bitmap, dst: RectF) {
+        val scale = minOf(dst.width() / bitmap.width.toFloat(), dst.height() / bitmap.height.toFloat())
+        val drawW = bitmap.width * scale
+        val drawH = bitmap.height * scale
+        val left = dst.left + (dst.width() - drawW) / 2f
+        val top = dst.top + (dst.height() - drawH) / 2f
+        canvas.drawBitmap(bitmap, null, RectF(left, top, left + drawW, top + drawH), null)
     }
 
     private fun drawOpeningSummary(
@@ -512,7 +630,15 @@ class ReportPdf(private val context: Context) {
             sample *= 2
         }
         val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
-        return BitmapFactory.decodeFile(path, options)
+        val decoded = BitmapFactory.decodeFile(path, options) ?: return null
+        val decodedLargest = maxOf(decoded.width, decoded.height)
+        if (decodedLargest <= maxSide || maxSide <= 0) return decoded
+        val scale = maxSide.toFloat() / decodedLargest.toFloat()
+        val width = (decoded.width * scale).toInt().coerceAtLeast(1)
+        val height = (decoded.height * scale).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(decoded, width, height, true).also { scaled ->
+            if (scaled !== decoded) decoded.recycle()
+        }
     }
 
     private fun rotateBitmap(source: Bitmap, degrees: Int): Bitmap {
