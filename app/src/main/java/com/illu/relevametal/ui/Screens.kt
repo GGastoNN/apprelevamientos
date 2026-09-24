@@ -3,6 +3,7 @@
 package com.illu.relevametal.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -11,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.activity.compose.BackHandler
@@ -38,6 +40,18 @@ import com.illu.relevametal.data.EventEntity
 import com.illu.relevametal.data.OpeningEntity
 import com.illu.relevametal.data.ProjectEntity
 import com.illu.relevametal.data.ProjectReferencePhotoEntity
+import com.illu.relevametal.personalization.AppThemeMode
+import com.illu.relevametal.personalization.DEFAULT_ACCENT
+import com.illu.relevametal.personalization.DEFAULT_DETECTION
+import com.illu.relevametal.personalization.DEFAULT_MARKUP
+import com.illu.relevametal.personalization.DEFAULT_MEASUREMENT
+import com.illu.relevametal.personalization.DEFAULT_TEXT
+import com.illu.relevametal.personalization.DEFAULT_TEXT_PIN
+import com.illu.relevametal.personalization.DEFAULT_STAMP_BACKGROUND
+import com.illu.relevametal.personalization.DEFAULT_STAMP_TEXT
+import com.illu.relevametal.personalization.PersonalizationSettings
+import com.illu.relevametal.personalization.colorInt
+import com.illu.relevametal.personalization.isValidHexColor
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -55,6 +69,8 @@ fun ProjectsScreen(
     var status by remember { mutableStateOf("TODAS") }
     var newProject by remember { mutableStateOf(false) }
     var showBranding by remember { mutableStateOf(false) }
+    var showPersonalization by remember { mutableStateOf(false) }
+    var showSettingsMenu by remember { mutableStateOf(false) }
     var showDataTools by remember { mutableStateOf(false) }
     var dataBusy by remember { mutableStateOf(false) }
     var dataError by remember { mutableStateOf<String?>(null) }
@@ -122,7 +138,28 @@ fun ProjectsScreen(
                 },
                 actions = {
                     TextButton(onClick = { showDataTools = true }) { Text("Datos") }
-                    TextButton(onClick = { showBranding = true }) { Text("Marca") }
+                    Box {
+                        TextButton(onClick = { showSettingsMenu = true }) { Text("Ajustes") }
+                        DropdownMenu(
+                            expanded = showSettingsMenu,
+                            onDismissRequest = { showSettingsMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Marca") },
+                                onClick = {
+                                    showSettingsMenu = false
+                                    showBranding = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Personalización") },
+                                onClick = {
+                                    showSettingsMenu = false
+                                    showPersonalization = true
+                                }
+                            )
+                        }
+                    }
                 }
             )
         },
@@ -201,6 +238,9 @@ fun ProjectsScreen(
 
     if (showBranding) {
         BrandingDialog(vm = vm, onDismiss = { showBranding = false })
+    }
+    if (showPersonalization) {
+        PersonalizationDialog(vm = vm, onDismiss = { showPersonalization = false })
     }
 
     if (showDataTools) {
@@ -1344,6 +1384,7 @@ fun EvidenceEditorScreen(
     var showDelete by remember { mutableStateOf(false) }
     var shareError by remember { mutableStateOf<String?>(null) }
     val branding by vm.branding.collectAsState()
+    val personalization by vm.personalization.collectAsState()
 
     LaunchedEffect(evidenceId) {
         val loaded = vm.evidenceItem(evidenceId)
@@ -1471,6 +1512,7 @@ fun EvidenceEditorScreen(
                             logo = logo,
                             enabled = branding.stampEnabled
                         ),
+                        style = personalization,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -1921,6 +1963,248 @@ private fun ProjectReferencePhotoCard(
                 }
             }
             TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) { Text("Eliminar") }
+        }
+    }
+}
+
+@Composable
+private fun PersonalizationDialog(
+    vm: AppViewModel,
+    onDismiss: () -> Unit
+) {
+    val current by vm.personalization.collectAsState()
+    var draft by remember(current) { mutableStateOf(current) }
+
+    val colorValues = listOf(
+        draft.accentColorHex,
+        draft.measurementColorHex,
+        draft.markupColorHex,
+        draft.textColorHex,
+        draft.textPinColorHex,
+        draft.detectionColorHex,
+        draft.stampBackgroundColorHex,
+        draft.stampTextColorHex
+    )
+    val colorsValid = colorValues.all(::isValidHexColor)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Personalización") },
+        confirmButton = {
+            Button(
+                enabled = colorsValid,
+                onClick = {
+                    vm.updatePersonalization(draft)
+                    onDismiss()
+                }
+            ) { Text("Guardar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text("Tema de la aplicación", fontWeight = FontWeight.SemiBold)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ThemeModeChip("Sistema", AppThemeMode.SYSTEM, draft.themeMode) { draft = draft.copy(themeMode = it) }
+                    ThemeModeChip("Claro", AppThemeMode.LIGHT, draft.themeMode) { draft = draft.copy(themeMode = it) }
+                    ThemeModeChip("Oscuro", AppThemeMode.DARK, draft.themeMode) { draft = draft.copy(themeMode = it) }
+                }
+
+                Text(
+                    "Color principal",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                HexColorSetting(
+                    label = "Color de la app",
+                    value = draft.accentColorHex,
+                    onValueChange = { draft = draft.copy(accentColorHex = it) },
+                    presets = listOf("#0B5E55", "#1565C0", "#6A1B9A", "#C62828", "#EF6C00", "#37474F")
+                )
+
+                HorizontalDivider()
+                Text("Anotaciones sobre fotografías", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Cotas, marcas, textos y sello se aplican también a imágenes compartidas y PDF; el color de detección automática se usa como ayuda visual en el editor.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                HexColorSetting(
+                    label = "Cotas",
+                    value = draft.measurementColorHex,
+                    onValueChange = { draft = draft.copy(measurementColorHex = it) },
+                    presets = listOf("#00D4FF", "#00E676", "#FFD54F", "#FF5252", "#FFFFFF", "#7C4DFF")
+                )
+                HexColorSetting(
+                    label = "Flechas y figuras",
+                    value = draft.markupColorHex,
+                    onValueChange = { draft = draft.copy(markupColorHex = it) },
+                    presets = listOf("#FFD54F", "#FF9800", "#FF5252", "#00E676", "#00D4FF", "#FFFFFF")
+                )
+                HexColorSetting(
+                    label = "Texto de cotas y notas",
+                    value = draft.textColorHex,
+                    onValueChange = { draft = draft.copy(textColorHex = it) },
+                    presets = listOf("#FFFFFF", "#212121", "#FFF59D", "#00E5FF", "#FFCDD2", "#C5E1A5")
+                )
+                HexColorSetting(
+                    label = "Marcador de nota",
+                    value = draft.textPinColorHex,
+                    onValueChange = { draft = draft.copy(textPinColorHex = it) },
+                    presets = listOf("#D32F2F", "#FF9800", "#FFD54F", "#00C853", "#2979FF", "#7C4DFF")
+                )
+                HexColorSetting(
+                    label = "Detección automática",
+                    value = draft.detectionColorHex,
+                    onValueChange = { draft = draft.copy(detectionColorHex = it) },
+                    presets = listOf("#FF9800", "#FFD54F", "#00E676", "#00D4FF", "#FF5252", "#FFFFFF")
+                )
+
+                Text("Sello sobre fotografías", fontWeight = FontWeight.SemiBold)
+                HexColorSetting(
+                    label = "Fondo del sello",
+                    value = draft.stampBackgroundColorHex,
+                    onValueChange = { draft = draft.copy(stampBackgroundColorHex = it) },
+                    presets = listOf("#000000", "#263238", "#0B5E55", "#1565C0", "#6A1B9A", "#FFFFFF")
+                )
+                HexColorSetting(
+                    label = "Texto del sello",
+                    value = draft.stampTextColorHex,
+                    onValueChange = { draft = draft.copy(stampTextColorHex = it) },
+                    presets = listOf("#FFFFFF", "#212121", "#FFF59D", "#00E5FF", "#FFCDD2", "#C5E1A5")
+                )
+
+                Text("Espesor de líneas", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ScaleChip("Fino", 0.75f, draft.lineThicknessScale) { draft = draft.copy(lineThicknessScale = it) }
+                    ScaleChip("Normal", 1f, draft.lineThicknessScale) { draft = draft.copy(lineThicknessScale = it) }
+                    ScaleChip("Grueso", 1.4f, draft.lineThicknessScale) { draft = draft.copy(lineThicknessScale = it) }
+                    ScaleChip("Muy grueso", 1.8f, draft.lineThicknessScale) { draft = draft.copy(lineThicknessScale = it) }
+                }
+
+                Text("Tamaño de textos", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ScaleChip("Compacto", 0.85f, draft.annotationTextScale) { draft = draft.copy(annotationTextScale = it) }
+                    ScaleChip("Normal", 1f, draft.annotationTextScale) { draft = draft.copy(annotationTextScale = it) }
+                    ScaleChip("Grande", 1.2f, draft.annotationTextScale) { draft = draft.copy(annotationTextScale = it) }
+                    ScaleChip("Muy grande", 1.4f, draft.annotationTextScale) { draft = draft.copy(annotationTextScale = it) }
+                }
+
+                if (!colorsValid) {
+                    Text(
+                        "Revisá los colores: usá formato HEX de 6 dígitos, por ejemplo #00D4FF.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = { draft = PersonalizationSettings() },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Restablecer valores predeterminados") }
+
+                Text(
+                    "La personalización no modifica las fotografías originales ni los datos de las cotas; solo cambia cómo se muestran y se renderizan.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun ThemeModeChip(
+    label: String,
+    mode: AppThemeMode,
+    selected: AppThemeMode,
+    onSelect: (AppThemeMode) -> Unit
+) {
+    FilterChip(
+        selected = selected == mode,
+        onClick = { onSelect(mode) },
+        label = { Text(label) }
+    )
+}
+
+@Composable
+private fun ScaleChip(
+    label: String,
+    value: Float,
+    selected: Float,
+    onSelect: (Float) -> Unit
+) {
+    FilterChip(
+        selected = kotlin.math.abs(value - selected) < 0.02f,
+        onClick = { onSelect(value) },
+        label = { Text(label) }
+    )
+}
+
+@Composable
+private fun HexColorSetting(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    presets: List<String>
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            val preview = if (isValidHexColor(value)) {
+                Color(colorInt(value))
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+            Surface(
+                modifier = Modifier
+                    .size(38.dp)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+                shape = CircleShape,
+                color = preview
+            ) {}
+            OutlinedTextField(
+                value = value,
+                onValueChange = { onValueChange(it.take(7)) },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                label = { Text("HEX") },
+                isError = value.isNotBlank() && !isValidHexColor(value)
+            )
+        }
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            presets.forEach { hex ->
+                val selected = value.equals(hex, ignoreCase = true)
+                Box(
+                    modifier = Modifier
+                        .size(if (selected) 34.dp else 30.dp)
+                        .background(Color(colorInt(hex)), CircleShape)
+                        .border(
+                            width = if (selected) 3.dp else 1.dp,
+                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                            shape = CircleShape
+                        )
+                        .clickable { onValueChange(hex) }
+                )
+            }
         }
     }
 }

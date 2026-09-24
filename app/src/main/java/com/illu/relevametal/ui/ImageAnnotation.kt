@@ -32,6 +32,16 @@ import com.illu.relevametal.annotation.AnnotationTool
 import com.illu.relevametal.annotation.DetectionBox
 import com.illu.relevametal.annotation.MarkupAnnotation
 import com.illu.relevametal.annotation.MeasurementAnnotation
+import com.illu.relevametal.personalization.DEFAULT_DETECTION
+import com.illu.relevametal.personalization.DEFAULT_MARKUP
+import com.illu.relevametal.personalization.DEFAULT_MEASUREMENT
+import com.illu.relevametal.personalization.DEFAULT_TEXT
+import com.illu.relevametal.personalization.DEFAULT_TEXT_PIN
+import com.illu.relevametal.personalization.DEFAULT_STAMP_BACKGROUND
+import com.illu.relevametal.personalization.DEFAULT_STAMP_TEXT
+import com.illu.relevametal.personalization.PersonalizationSettings
+import com.illu.relevametal.personalization.colorInt
+import com.illu.relevametal.personalization.contrastShadowColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.atan2
@@ -103,9 +113,18 @@ fun AnnotatedPhoto(
     onPair: (Offset, Offset) -> Unit,
     onSinglePoint: (Offset) -> Unit,
     stamp: PhotoStampUi? = null,
+    style: PersonalizationSettings = PersonalizationSettings(),
     modifier: Modifier = Modifier
 ) {
     var size by remember { mutableStateOf(IntSize.Zero) }
+    val measurementColor = remember(style.measurementColorHex) { Color(colorInt(style.measurementColorHex, DEFAULT_MEASUREMENT)) }
+    val markupColor = remember(style.markupColorHex) { Color(colorInt(style.markupColorHex, DEFAULT_MARKUP)) }
+    val detectionColor = remember(style.detectionColorHex) { Color(colorInt(style.detectionColorHex, DEFAULT_DETECTION)) }
+    val textColorInt = remember(style.textColorHex) { colorInt(style.textColorHex, DEFAULT_TEXT) }
+    val textPinColor = remember(style.textPinColorHex) { Color(colorInt(style.textPinColorHex, DEFAULT_TEXT_PIN)) }
+    val textShadowColor = remember(textColorInt) { contrastShadowColor(textColorInt) }
+    val lineScale = style.lineThicknessScale.coerceIn(0.65f, 2f)
+    val textScale = style.annotationTextScale.coerceIn(0.75f, 1.5f)
 
     val fit = remember(size, bitmap) {
         if (size.width == 0 || size.height == 0) {
@@ -156,27 +175,27 @@ fun AnnotatedPhoto(
 
             detections.forEach { box ->
                 drawRect(
-                    color = Color(0xFFFF9800),
+                    color = detectionColor,
                     topLeft = Offset(fit.left + box.left * fit.width, fit.top + box.top * fit.height),
                     size = Size((box.right - box.left) * fit.width, (box.bottom - box.top) * fit.height),
-                    style = Stroke(width = 3f)
+                    style = Stroke(width = 3f * lineScale)
                 )
             }
 
             measurements.forEach { m ->
                 val a = map(Offset(m.x1, m.y1))
                 val b = map(Offset(m.x2, m.y2))
-                val lineColor = Color(0xFF00D4FF)
-                drawLine(lineColor, a, b, strokeWidth = 5f)
-                drawCircle(lineColor, radius = 7f, center = a)
-                drawCircle(lineColor, radius = 7f, center = b)
-                drawDoubleArrow(a, b, lineColor)
+                val lineColor = measurementColor
+                drawLine(lineColor, a, b, strokeWidth = 5f * lineScale)
+                drawCircle(lineColor, radius = 7f * lineScale, center = a)
+                drawCircle(lineColor, radius = 7f * lineScale, center = b)
+                drawDoubleArrow(a, b, lineColor, lineScale)
 
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = android.graphics.Color.WHITE
-                    textSize = 32f
+                    color = textColorInt
+                    textSize = 32f * textScale
                     typeface = android.graphics.Typeface.DEFAULT_BOLD
-                    setShadowLayer(5f, 0f, 0f, android.graphics.Color.BLACK)
+                    setShadowLayer(5f, 0f, 0f, textShadowColor)
                 }
                 val text = listOf(m.label, m.value).filter { it.isNotBlank() }.joinToString(" · ")
                 drawContext.canvas.nativeCanvas.drawText(text, (a.x + b.x) / 2f + 10f, (a.y + b.y) / 2f - 10f, paint)
@@ -185,35 +204,35 @@ fun AnnotatedPhoto(
             markups.forEach { markup ->
                 val a = map(Offset(markup.x1, markup.y1))
                 val b = map(Offset(markup.x2, markup.y2))
-                val markupColor = Color(0xFFFFD54F)
+                val markupLineColor = markupColor
                 when (markup.type) {
                     "ARROW" -> {
-                        drawLine(markupColor, a, b, 5f)
-                        drawArrowHead(a, b, markupColor)
+                        drawLine(markupLineColor, a, b, 5f * lineScale)
+                        drawArrowHead(a, b, markupLineColor, lineScale)
                     }
                     "RECTANGLE" -> {
                         drawRect(
-                            markupColor,
+                            markupLineColor,
                             topLeft = Offset(minOf(a.x, b.x), minOf(a.y, b.y)),
                             size = Size(kotlin.math.abs(b.x - a.x), kotlin.math.abs(b.y - a.y)),
-                            style = Stroke(5f)
+                            style = Stroke(5f * lineScale)
                         )
                     }
                     "CIRCLE" -> {
                         drawOval(
-                            markupColor,
+                            markupLineColor,
                             topLeft = Offset(minOf(a.x, b.x), minOf(a.y, b.y)),
                             size = Size(kotlin.math.abs(b.x - a.x), kotlin.math.abs(b.y - a.y)),
-                            style = Stroke(5f)
+                            style = Stroke(5f * lineScale)
                         )
                     }
                     "TEXT" -> {
-                        drawCircle(Color(0xFFD32F2F), radius = 14f, center = a)
+                        drawCircle(textPinColor, radius = 14f * lineScale.coerceAtMost(1.5f), center = a)
                         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            this.color = android.graphics.Color.WHITE
-                            textSize = 31f
+                            this.color = textColorInt
+                            textSize = 31f * textScale
                             typeface = android.graphics.Typeface.DEFAULT_BOLD
-                            setShadowLayer(5f, 0f, 0f, android.graphics.Color.BLACK)
+                            setShadowLayer(5f, 0f, 0f, textShadowColor)
                         }
                         drawContext.canvas.nativeCanvas.drawText(markup.text, a.x + 20f, a.y - 12f, paint)
                     }
@@ -222,23 +241,25 @@ fun AnnotatedPhoto(
 
             firstPoint?.let {
                 if (activeTool != AnnotationTool.NONE && activeTool != AnnotationTool.TEXT) {
-                    drawCircle(Color(0xFFFFFF00), radius = 12f, center = map(it))
+                    drawCircle(measurementColor, radius = 12f * lineScale.coerceAtMost(1.5f), center = map(it))
                 }
             }
         }
 
-        stamp?.takeIf { it.enabled }?.let { PhotoStampOverlay(it) }
+        stamp?.takeIf { it.enabled }?.let { PhotoStampOverlay(it, style) }
     }
 }
 
 @Composable
-private fun BoxScope.PhotoStampOverlay(stamp: PhotoStampUi) {
+private fun BoxScope.PhotoStampOverlay(stamp: PhotoStampUi, style: PersonalizationSettings) {
     if (stamp.companyName.isBlank() && stamp.logo == null && stamp.lines.none { it.isNotBlank() }) return
+    val panelColor = Color(colorInt(style.stampBackgroundColorHex, DEFAULT_STAMP_BACKGROUND)).copy(alpha = 0.72f)
+    val stampTextColor = Color(colorInt(style.stampTextColorHex, DEFAULT_STAMP_TEXT))
     Row(
         modifier = Modifier
             .align(Alignment.BottomEnd)
             .padding(12.dp)
-            .background(Color(0xB8000000), RoundedCornerShape(10.dp))
+            .background(panelColor, RoundedCornerShape(10.dp))
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -255,34 +276,36 @@ private fun BoxScope.PhotoStampOverlay(stamp: PhotoStampUi) {
             if (stamp.companyName.isNotBlank()) {
                 Text(
                     stamp.companyName,
-                    color = Color.White,
+                    color = stampTextColor,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold
                 )
             }
             stamp.lines.take(4).forEach { line ->
                 if (line.isNotBlank()) {
-                    Text(line, color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    Text(line, color = stampTextColor, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDoubleArrow(a: Offset, b: Offset, color: Color) {
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDoubleArrow(a: Offset, b: Offset, color: Color, lineScale: Float) {
     val angle = atan2(b.y - a.y, b.x - a.x)
-    val arrow = 18f
+    val arrow = 18f * lineScale.coerceIn(0.8f, 1.5f)
     val spread = 0.55f
-    drawLine(color, a, Offset(a.x + cos(angle + spread) * arrow, a.y + sin(angle + spread) * arrow), 4f)
-    drawLine(color, a, Offset(a.x + cos(angle - spread) * arrow, a.y + sin(angle - spread) * arrow), 4f)
-    drawLine(color, b, Offset(b.x - cos(angle + spread) * arrow, b.y - sin(angle + spread) * arrow), 4f)
-    drawLine(color, b, Offset(b.x - cos(angle - spread) * arrow, b.y - sin(angle - spread) * arrow), 4f)
+    val stroke = 4f * lineScale
+    drawLine(color, a, Offset(a.x + cos(angle + spread) * arrow, a.y + sin(angle + spread) * arrow), stroke)
+    drawLine(color, a, Offset(a.x + cos(angle - spread) * arrow, a.y + sin(angle - spread) * arrow), stroke)
+    drawLine(color, b, Offset(b.x - cos(angle + spread) * arrow, b.y - sin(angle + spread) * arrow), stroke)
+    drawLine(color, b, Offset(b.x - cos(angle - spread) * arrow, b.y - sin(angle - spread) * arrow), stroke)
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawArrowHead(a: Offset, b: Offset, color: Color) {
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawArrowHead(a: Offset, b: Offset, color: Color, lineScale: Float) {
     val angle = atan2(b.y - a.y, b.x - a.x)
-    val arrow = 24f
+    val arrow = 24f * lineScale.coerceIn(0.8f, 1.5f)
     val spread = 0.55f
-    drawLine(color, b, Offset(b.x - cos(angle + spread) * arrow, b.y - sin(angle + spread) * arrow), 5f)
-    drawLine(color, b, Offset(b.x - cos(angle - spread) * arrow, b.y - sin(angle - spread) * arrow), 5f)
+    val stroke = 5f * lineScale
+    drawLine(color, b, Offset(b.x - cos(angle + spread) * arrow, b.y - sin(angle + spread) * arrow), stroke)
+    drawLine(color, b, Offset(b.x - cos(angle - spread) * arrow, b.y - sin(angle - spread) * arrow), stroke)
 }

@@ -11,6 +11,8 @@ import com.illu.relevametal.branding.BrandingStore
 import com.illu.relevametal.data.*
 import com.illu.relevametal.detection.OpeningDetector
 import com.illu.relevametal.pdf.ReportPdf
+import com.illu.relevametal.personalization.PersonalizationSettings
+import com.illu.relevametal.personalization.PersonalizationStore
 import com.illu.relevametal.render.PhotoRenderer
 import com.illu.relevametal.transfer.ProjectArchiveManager
 import kotlinx.coroutines.Dispatchers
@@ -42,8 +44,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val db = AppDatabase.get(app)
     private val detector = OpeningDetector()
     private val brandingStore = BrandingStore(app)
+    private val personalizationStore = PersonalizationStore(app)
     private val archiveManager = ProjectArchiveManager(app, db)
     val branding = MutableStateFlow(brandingStore.load())
+    val personalization = MutableStateFlow(personalizationStore.load())
 
     val projects = db.projects()
         .observeProjects()
@@ -73,6 +77,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val normalized = settings.copy(companyName = settings.companyName.trim())
         brandingStore.save(normalized)
         branding.value = normalized
+    }
+
+    fun updatePersonalization(settings: PersonalizationSettings) {
+        val normalized = personalizationStore.normalize(settings)
+        personalizationStore.save(normalized)
+        personalization.value = normalized
+    }
+
+    fun resetPersonalization() {
+        val defaults = PersonalizationSettings()
+        personalizationStore.save(defaults)
+        personalization.value = defaults
     }
 
     fun importBrandLogo(uri: Uri, onReady: (Result<Unit>) -> Unit = {}) = viewModelScope.launch {
@@ -533,7 +549,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 require(referencePhotos.isNotEmpty()) {
                     "Para generar el PDF agregá al menos una imagen válida del edificio en la pestaña Obra."
                 }
-                ReportPdf(getApplication()).generate(project, spaces, events, branding.value, referencePhotos)
+                ReportPdf(getApplication()).generate(project, spaces, events, branding.value, referencePhotos, personalization.value)
             }
         }
         onReady(result)
@@ -576,6 +592,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     space = space,
                     opening = opening,
                     branding = branding.value,
+                    style = personalization.value,
                     maxSide = 2600
                 ) ?: error("No se pudo procesar la fotografía")
                 val dir = File(getApplication<Application>().filesDir, "shared_photos").apply { mkdirs() }
