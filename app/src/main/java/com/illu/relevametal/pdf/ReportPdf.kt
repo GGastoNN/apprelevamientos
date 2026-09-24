@@ -8,6 +8,7 @@ import com.illu.relevametal.annotation.MeasurementAnnotation
 import com.illu.relevametal.branding.BrandingSettings
 import com.illu.relevametal.data.*
 import com.illu.relevametal.render.PhotoRenderer
+import com.illu.relevametal.personalization.PersonalizationSettings
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -64,7 +65,8 @@ class ReportPdf(private val context: Context) {
         spaces: List<SpaceBundle>,
         events: List<EventEntity>,
         branding: BrandingSettings,
-        referencePhotos: List<ProjectReferencePhotoEntity>
+        referencePhotos: List<ProjectReferencePhotoEntity>,
+        personalization: PersonalizationSettings = PersonalizationSettings()
     ): File {
         require(referencePhotos.isNotEmpty()) { "El informe requiere al menos una imagen del edificio para la portada." }
         val pdf = PdfDocument()
@@ -105,6 +107,7 @@ class ReportPdf(private val context: Context) {
                     opening = bundle.opening,
                     selectedEvidence = bundle.evidence.firstOrNull(),
                     branding = branding,
+                    personalization = personalization,
                     indexInSpace = index + 1,
                     openingsInSpace = space.openings.size
                 )
@@ -324,6 +327,7 @@ class ReportPdf(private val context: Context) {
         opening: OpeningEntity,
         selectedEvidence: EvidenceEntity?,
         branding: BrandingSettings,
+        personalization: PersonalizationSettings,
         indexInSpace: Int,
         openingsInSpace: Int
     ) {
@@ -407,6 +411,7 @@ class ReportPdf(private val context: Context) {
                 space = space,
                 opening = opening,
                 branding = branding,
+                style = personalization,
                 maxSide = 1200
             )
             if (annotated != null) {
@@ -572,7 +577,8 @@ class ReportPdf(private val context: Context) {
         space: SpaceEntity,
         opening: OpeningEntity,
         evidence: EvidenceEntity,
-        branding: BrandingSettings
+        branding: BrandingSettings,
+        personalization: PersonalizationSettings = PersonalizationSettings()
     ) {
         var y = 104f
         val annotated = PhotoRenderer.render(
@@ -581,6 +587,7 @@ class ReportPdf(private val context: Context) {
             space = space,
             opening = opening,
             branding = branding,
+            style = personalization,
             maxSide = 2200
         )
         if (annotated == null) {
