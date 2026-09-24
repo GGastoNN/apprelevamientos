@@ -66,8 +66,8 @@ La detección automática ubica candidatos visuales de vano, pero no convierte p
 - CameraX 1.4.1
 - compileSdk / targetSdk 35
 - Java 17
-- versionCode 9
-- versionName 1.1.0
+- versionCode 10
+- versionName 1.1.1
 
 ## Transferencia entre dispositivos (v1.0)
 
