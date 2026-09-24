@@ -16,6 +16,15 @@ import com.illu.relevametal.data.EvidenceEntity
 import com.illu.relevametal.data.OpeningEntity
 import com.illu.relevametal.data.ProjectEntity
 import com.illu.relevametal.data.SpaceEntity
+import com.illu.relevametal.personalization.DEFAULT_MARKUP
+import com.illu.relevametal.personalization.DEFAULT_MEASUREMENT
+import com.illu.relevametal.personalization.DEFAULT_TEXT
+import com.illu.relevametal.personalization.DEFAULT_TEXT_PIN
+import com.illu.relevametal.personalization.DEFAULT_STAMP_BACKGROUND
+import com.illu.relevametal.personalization.DEFAULT_STAMP_TEXT
+import com.illu.relevametal.personalization.PersonalizationSettings
+import com.illu.relevametal.personalization.colorInt
+import com.illu.relevametal.personalization.contrastShadowColor
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -32,6 +41,7 @@ object PhotoRenderer {
         space: SpaceEntity,
         opening: OpeningEntity,
         branding: BrandingSettings,
+        style: PersonalizationSettings = PersonalizationSettings(),
         maxSide: Int = 2400
     ): Bitmap? {
         val source = decodeSampledBitmap(evidence.filePath, maxSide) ?: return null
@@ -50,10 +60,10 @@ object PhotoRenderer {
         )
 
         val canvas = Canvas(output)
-        drawMeasurements(canvas, output.width, output.height, measurements)
-        drawMarkups(canvas, output.width, output.height, markups)
+        drawMeasurements(canvas, output.width, output.height, measurements, style)
+        drawMarkups(canvas, output.width, output.height, markups, style)
         if (branding.stampEnabled) {
-            drawStamp(canvas, output, project, space, opening, evidence, branding)
+            drawStamp(canvas, output, project, space, opening, evidence, branding, style)
         }
         return output
     }
@@ -93,20 +103,23 @@ object PhotoRenderer {
         canvas: Canvas,
         width: Int,
         height: Int,
-        items: List<MeasurementAnnotation>
+        items: List<MeasurementAnnotation>,
+        style: PersonalizationSettings
     ) {
         if (items.isEmpty()) return
-        val stroke = max(4f, width / 500f)
+        val stroke = max(4f, width / 500f) * style.lineThicknessScale
+        val measurementColor = colorInt(style.measurementColorHex, DEFAULT_MEASUREMENT)
+        val annotationTextColor = colorInt(style.textColorHex, DEFAULT_TEXT)
         val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(0, 212, 255)
+            color = measurementColor
             style = Paint.Style.STROKE
             strokeWidth = stroke
         }
         val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = max(24f, width / 34f)
+            color = annotationTextColor
+            textSize = max(24f, width / 34f) * style.annotationTextScale
             typeface = Typeface.DEFAULT_BOLD
-            setShadowLayer(6f, 0f, 0f, Color.BLACK)
+            setShadowLayer(6f, 0f, 0f, contrastShadowColor(annotationTextColor))
         }
         items.forEach { m ->
             val x1 = m.x1 * width
@@ -128,23 +141,27 @@ object PhotoRenderer {
         canvas: Canvas,
         width: Int,
         height: Int,
-        items: List<MarkupAnnotation>
+        items: List<MarkupAnnotation>,
+        style: PersonalizationSettings
     ) {
         if (items.isEmpty()) return
-        val stroke = max(4f, width / 500f)
+        val stroke = max(4f, width / 500f) * style.lineThicknessScale
+        val markupColor = colorInt(style.markupColorHex, DEFAULT_MARKUP)
+        val annotationTextColor = colorInt(style.textColorHex, DEFAULT_TEXT)
+        val textPinColor = colorInt(style.textPinColorHex, DEFAULT_TEXT_PIN)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(255, 213, 79)
+            color = markupColor
             style = Paint.Style.STROKE
             strokeWidth = stroke
         }
         val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = max(24f, width / 34f)
+            color = annotationTextColor
+            textSize = max(24f, width / 34f) * style.annotationTextScale
             typeface = Typeface.DEFAULT_BOLD
-            setShadowLayer(6f, 0f, 0f, Color.BLACK)
+            setShadowLayer(6f, 0f, 0f, contrastShadowColor(annotationTextColor))
         }
         val pin = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(211, 47, 47)
+            color = textPinColor
             style = Paint.Style.FILL
         }
         items.forEach { m ->
@@ -178,7 +195,8 @@ object PhotoRenderer {
         space: SpaceEntity,
         opening: OpeningEntity,
         evidence: EvidenceEntity,
-        branding: BrandingSettings
+        branding: BrandingSettings,
+        style: PersonalizationSettings
     ) {
         val companyName = branding.companyName.trim()
         val lines = buildList {
@@ -200,7 +218,11 @@ object PhotoRenderer {
         val right = w - margin
         val bottom = h - margin
 
-        val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(190, 0, 0, 0) }
+        val stampBackground = colorInt(style.stampBackgroundColorHex, DEFAULT_STAMP_BACKGROUND)
+        val stampText = colorInt(style.stampTextColorHex, DEFAULT_STAMP_TEXT)
+        val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(190, Color.red(stampBackground), Color.green(stampBackground), Color.blue(stampBackground))
+        }
         canvas.drawRoundRect(RectF(left, top, right, bottom), 18f, 18f, bg)
 
         var textLeft = left + 22f
@@ -220,12 +242,12 @@ object PhotoRenderer {
         val titleSize = (w / 48f).coerceIn(24f, 48f)
         val bodySize = (w / 72f).coerceIn(18f, 34f)
         val title = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
+            color = stampText
             textSize = titleSize
             typeface = Typeface.DEFAULT_BOLD
         }
         val body = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
+            color = stampText
             textSize = bodySize
         }
 
