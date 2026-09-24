@@ -112,7 +112,7 @@ object PhotoRenderer {
         val annotationTextColor = colorInt(style.textColorHex, DEFAULT_TEXT)
         val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = measurementColor
-            style = Paint.Style.STROKE
+            this.style = Paint.Style.STROKE
             strokeWidth = stroke
         }
         val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -151,7 +151,7 @@ object PhotoRenderer {
         val textPinColor = colorInt(style.textPinColorHex, DEFAULT_TEXT_PIN)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = markupColor
-            style = Paint.Style.STROKE
+            this.style = Paint.Style.STROKE
             strokeWidth = stroke
         }
         val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -162,7 +162,7 @@ object PhotoRenderer {
         }
         val pin = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = textPinColor
-            style = Paint.Style.FILL
+            this.style = Paint.Style.FILL
         }
         items.forEach { m ->
             val x1 = m.x1 * width
