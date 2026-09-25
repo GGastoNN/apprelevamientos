@@ -1,4 +1,4 @@
-# Grupo IDEA - Relevamientos — Especificación funcional V1.0
+# Grupo IDEA - Relevamientos — Especificación funcional V1.2
 
 ## Principio
 
@@ -9,6 +9,12 @@ La aplicación prioriza velocidad de campo y trazabilidad: cada acción frecuent
 Obra → Espacio/Sector → Vano/Carpintería → Evidencias.
 
 La Bitácora de obra registra decisiones, incidencias, fotografías, altas y cambios relevantes.
+
+## Flujo rápido de campo
+
+La ficha de vano puede alternar entre modo rápido y modo completo. El modo rápido prioriza medidas principales, controles, observaciones y evidencia fotográfica, manteniendo un indicador de avance. Los vanos del mismo espacio se recorren con navegación anterior/siguiente y un comando `Guardar y siguiente`. El autoguardado se mantiene activo y se fuerza antes de cambiar de vano o abrir la cámara.
+
+Cada espacio dispone de búsqueda, filtros por estado y una barra de avance calculada sobre vanos Relevados/Aprobados.
 
 ## Vano
 

@@ -1,4 +1,4 @@
-# Grupo IDEA - Relevamientos — V1.0 transferencia de datos
+# Grupo IDEA - Relevamientos — V1.2 interfaz dinámica y flujo rápido
 
 Aplicación Android nativa, offline-first, para relevamientos diarios de obra orientados a carpintería metálica.
 
@@ -54,6 +54,10 @@ El nombre de empresa es opcional. Si se deja vacío, no se fuerza ningún texto 
 - Se puede omitir la foto de un vano para reducir todavía más el peso del archivo.
 - Funcionamiento offline para relevamiento, fotos, base local y PDF.
 
+## Flujo rápido (v1.2)
+
+La ficha de vano incorpora un modo de trabajo rápido pensado para recorridos repetitivos en obra: muestra un progreso de cuatro pasos esenciales, permite avanzar al vano anterior/siguiente y dispone de `Guardar y siguiente` fijo en pantalla. El listado de vanos ahora tiene búsqueda, filtros por estado, indicadores de controles y una barra de avance del sector. El modo completo sigue disponible con un interruptor para acceder a identificación, holguras y condiciones técnicas avanzadas.
+
 ## Medición fotográfica
 
 La detección automática ubica candidatos visuales de vano, pero no convierte por sí sola píxeles en milímetros confiables. Las cotas ingresadas por el operario son la referencia documental. Una etapa posterior puede sumar calibración por referencia conocida y ARCore/Depth en dispositivos compatibles.
@@ -66,8 +70,8 @@ La detección automática ubica candidatos visuales de vano, pero no convierte p
 - CameraX 1.4.1
 - compileSdk / targetSdk 35
 - Java 17
-- versionCode 10
-- versionName 1.1.1
+- versionCode 11
+- versionName 1.2.0
 
 ## Transferencia entre dispositivos (v1.0)
 

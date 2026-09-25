@@ -19,3 +19,12 @@ El entorno de revisión no incluye Android SDK ni una instalación de Gradle, po
 ## Recomendación de mantenimiento
 
 El proyecto usa Kotlin 2.0.21/KSP con Room 2.6.1. Room 2.7.x incorporó soporte explícito para Kotlin 2.0/KSP2; conviene evaluar esa actualización en una versión posterior y probar la migración en CI antes de adoptarla.
+
+
+## Revisión V1.2.0
+
+- Se verificó balance estructural de Kotlin en `Screens.kt` después de incorporar el flujo rápido.
+- `OpeningScreen` tiene un único punto de llamada actualizado en `MainActivity`.
+- No se modificó el esquema Room ni el formato `.gidea`, por lo que esta versión no requiere migración de datos.
+- Se añadió explícitamente la dependencia Compose Animation para `AnimatedVisibility`, `animateContentSize` y progreso animado.
+- El entorno actual no incluye Android SDK/Gradle, por lo que el ensamblado final debe ejecutarse mediante Android Studio o el workflow de GitHub Actions incluido.
