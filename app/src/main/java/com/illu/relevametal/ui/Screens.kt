@@ -2,6 +2,9 @@
 
 package com.illu.relevametal.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -178,6 +181,10 @@ fun ProjectsScreen(
             contentPadding = PaddingValues(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (projects.isNotEmpty()) {
+                item { PortfolioSummaryCard(projects) }
+            }
+
             item {
                 OutlinedTextField(
                     value = query,
@@ -361,10 +368,74 @@ private fun DataTransferDialog(
 }
 
 @Composable
+private fun PortfolioSummaryCard(projects: List<ProjectEntity>) {
+    val active = projects.count { it.status == "EN_CURSO" }
+    val paused = projects.count { it.status == "PAUSADA" }
+    val finished = projects.count { it.status == "FINALIZADA" }
+
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize()
+    ) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Panel de obras", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "${projects.size} obra${if (projects.size == 1) "" else "s"} en el dispositivo",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Text(
+                        projects.size.toString(),
+                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                CompactInfoPill("$active en curso")
+                if (paused > 0) CompactInfoPill("$paused pausada${if (paused == 1) "" else "s"}")
+                if (finished > 0) CompactInfoPill("$finished finalizada${if (finished == 1) "" else "s"}")
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactInfoPill(text: String) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+    ) {
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
 private fun ProjectCard(project: ProjectEntity, onClick: () -> Unit) {
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
+            .animateContentSize()
             .clickable(onClick = onClick)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -962,6 +1033,8 @@ fun SpaceScreen(
     var spaceName by remember { mutableStateOf("Vanos") }
     var showDialog by remember { mutableStateOf(false) }
     var suggestedCode by remember { mutableStateOf("V01") }
+    var query by remember { mutableStateOf("") }
+    var statusFilter by remember { mutableStateOf("TODAS") }
 
     LaunchedEffect(spaceId) { spaceName = vm.space(spaceId)?.name ?: "Vanos" }
     LaunchedEffect(showDialog, openings.size) {
@@ -969,6 +1042,17 @@ fun SpaceScreen(
     }
 
     val completed = openings.count { it.status == "RELEVADO" || it.status == "APROBADO" }
+    val progressTarget = if (openings.isEmpty()) 0f else completed.toFloat() / openings.size.toFloat()
+    val progress by animateFloatAsState(progressTarget, label = "avance-espacio")
+    val filtered = remember(openings, query, statusFilter) {
+        val q = query.trim()
+        openings.filter { opening ->
+            val matchesStatus = statusFilter == "TODAS" || opening.status == statusFilter
+            val matchesQuery = q.isBlank() || opening.code.contains(q, ignoreCase = true) ||
+                opening.type.contains(q, ignoreCase = true) || opening.notes.contains(q, ignoreCase = true)
+            matchesStatus && matchesQuery
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -998,8 +1082,42 @@ fun SpaceScreen(
                 .padding(padding)
                 .fillMaxSize(),
             contentPadding = PaddingValues(14.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            item {
+                SpaceProgressCard(
+                    completed = completed,
+                    total = openings.size,
+                    progress = progress
+                )
+            }
+
+            if (openings.isNotEmpty()) {
+                item {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Buscar código, tipo u observación") }
+                    )
+                }
+                item {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("TODAS", "PENDIENTE", "VERIFICAR", "RELEVADO", "APROBADO").forEach { value ->
+                            FilterChip(
+                                selected = statusFilter == value,
+                                onClick = { statusFilter = value },
+                                label = { Text(statusLabel(value)) }
+                            )
+                        }
+                    }
+                }
+            }
+
             if (openings.isEmpty()) {
                 item {
                     EmptyState(
@@ -1007,8 +1125,16 @@ fun SpaceScreen(
                         "El código se propone automáticamente para cargar rápido durante el recorrido."
                     )
                 }
+            } else if (filtered.isEmpty()) {
+                item {
+                    EmptyState(
+                        "No hay vanos con este filtro",
+                        "Cambiá el estado seleccionado o la búsqueda para volver a verlos."
+                    )
+                }
             }
-            items(items = openings, key = { it.id }) { opening ->
+
+            items(items = filtered, key = { it.id }) { opening ->
                 OpeningListCard(opening) { onOpenOpening(opening.id) }
             }
             item { Spacer(Modifier.height(80.dp)) }
@@ -1030,36 +1156,102 @@ fun SpaceScreen(
 }
 
 @Composable
-private fun OpeningListCard(opening: OpeningEntity, onClick: () -> Unit) {
+private fun SpaceProgressCard(completed: Int, total: Int, progress: Float) {
+    val pending = (total - completed).coerceAtLeast(0)
     ElevatedCard(
-        Modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .animateContentSize()
     ) {
-        Row(
+        Column(
             Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "${opening.code} · ${opening.type}",
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    "${opening.widthMm ?: "—"} × ${opening.heightMm ?: "—"} mm",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                if (opening.notes.isNotBlank()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Avance del sector", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        opening.notes,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        if (total == 0) "Listo para empezar" else "$completed completos · $pending pendientes",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                if (total > 0) {
+                    Text(
+                        "${(progress * 100).toInt()}%",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
-            StatusBadge(opening.status)
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp),
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun OpeningListCard(opening: OpeningEntity, onClick: () -> Unit) {
+    val controls = listOf(
+        opening.plumbState,
+        opening.levelState,
+        opening.squareState,
+        opening.floorState,
+        opening.plasterState,
+        opening.premarcoState
+    )
+    val checked = controls.count { it != "NO_VERIFICADO" }
+    val hasMainMeasures = opening.widthMm != null && opening.heightMm != null
+
+    ElevatedCard(
+        Modifier
+            .fillMaxWidth()
+            .animateContentSize()
+            .clickable(onClick = onClick)
+    ) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "${opening.code} · ${opening.type}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "${opening.widthMm ?: "—"} × ${opening.heightMm ?: "—"} mm",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                StatusBadge(opening.status)
+            }
+
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                CompactInfoPill(if (hasMainMeasures) "✓ Medidas" else "○ Medidas")
+                CompactInfoPill("$checked/6 controles")
+                if (opening.interference.isNotBlank()) CompactInfoPill("⚠ Interferencia")
+            }
+
+            if (opening.notes.isNotBlank()) {
+                Text(
+                    opening.notes,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -1072,7 +1264,8 @@ fun OpeningScreen(
     onBack: () -> Unit,
     onCamera: () -> Unit,
     onEditEvidence: (Long) -> Unit,
-    onDuplicated: (Long) -> Unit
+    onDuplicated: (Long) -> Unit,
+    onNavigateOpening: (Long) -> Unit
 ) {
     var opening by remember(openingId) { mutableStateOf<OpeningEntity?>(null) }
     val evidence by vm.evidence(openingId).collectAsState(initial = emptyList())
@@ -1081,6 +1274,7 @@ fun OpeningScreen(
 
     LaunchedEffect(openingId) { opening = vm.opening(openingId) }
     val o = opening ?: return
+    val siblingOpenings by vm.openings(o.spaceId).collectAsState(initial = emptyList())
 
     var code by remember(o.id, o.updatedAt) { mutableStateOf(o.code) }
     var type by remember(o.id, o.updatedAt) { mutableStateOf(o.type) }
@@ -1105,8 +1299,9 @@ fun OpeningScreen(
     var direction by remember(o.id, o.updatedAt) { mutableStateOf(o.openingDirection) }
     var interference by remember(o.id, o.updatedAt) { mutableStateOf(o.interference) }
     var notes by remember(o.id, o.updatedAt) { mutableStateOf(o.notes) }
-    var savedFlash by remember { mutableStateOf(false) }
+    var savedFlash by remember(o.id) { mutableStateOf(true) }
     var showIncidenceDialog by remember { mutableStateOf(false) }
+    var fastMode by remember { mutableStateOf(true) }
 
     fun buildOpening(): OpeningEntity = o.copy(
         code = code.trim().uppercase().ifBlank { o.code },
@@ -1140,9 +1335,24 @@ fun OpeningScreen(
     ).joinToString("\u001F")
 
     LaunchedEffect(draftSignature) {
-        delay(900)
+        savedFlash = false
+        delay(700)
         vm.saveOpeningDraft(projectId, buildOpening())
+        savedFlash = true
     }
+
+    val currentIndex = siblingOpenings.indexOfFirst { it.id == openingId }
+    val previousOpeningId = siblingOpenings.getOrNull(currentIndex - 1)?.id
+    val nextOpeningId = siblingOpenings.getOrNull(currentIndex + 1)?.id
+    val verifiedControls = listOf(plumb, level, square, floor, plaster, premarco).count { it != "NO_VERIFICADO" }
+    val workflowDone = listOf(
+        width.toIntOrNull() != null && height.toIntOrNull() != null,
+        verifiedControls == 6,
+        evidence.isNotEmpty(),
+        status == "RELEVADO" || status == "APROBADO"
+    ).count { it }
+    val workflowProgressTarget = workflowDone / 4f
+    val workflowProgress by animateFloatAsState(workflowProgressTarget, label = "avance-vano")
 
     BackHandler {
         vm.saveOpeningDraft(projectId, buildOpening())
@@ -1164,21 +1374,59 @@ fun OpeningScreen(
                     onBack()
                 }) { Text("←") } },
                 actions = {
-                    TextButton(onClick = {
-                        val updated = buildOpening()
-                        opening = updated
-                        vm.saveOpening(projectId, updated)
-                        savedFlash = true
-                    }) { Text(if (savedFlash) "Guardado ✓" else "Guardar") }
+                    Text(
+                        if (savedFlash) "Guardado ✓" else "Guardando…",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (savedFlash) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
                 }
             )
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = onCamera,
+                onClick = {
+                    vm.saveOpeningDraft(projectId, buildOpening())
+                    onCamera()
+                },
                 text = { Text("Tomar foto") },
                 icon = { Text("●") }
             )
+        },
+        bottomBar = {
+            Surface(tonalElevation = 4.dp, shadowElevation = 6.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val updated = buildOpening()
+                            opening = updated
+                            vm.saveOpening(projectId, updated)
+                            savedFlash = true
+                        },
+                        modifier = Modifier.weight(0.8f)
+                    ) {
+                        Text("Guardar")
+                    }
+                    Button(
+                        onClick = {
+                            val updated = buildOpening()
+                            opening = updated
+                            vm.saveOpening(projectId, updated)
+                            savedFlash = true
+                            if (nextOpeningId != null) onNavigateOpening(nextOpeningId) else onBack()
+                        },
+                        modifier = Modifier.weight(1.2f)
+                    ) {
+                        Text(if (nextOpeningId != null) "Guardar y siguiente →" else "Guardar y volver")
+                    }
+                }
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -1188,6 +1436,31 @@ fun OpeningScreen(
             contentPadding = PaddingValues(14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                OpeningWorkflowCard(
+                    done = workflowDone,
+                    progress = workflowProgress,
+                    fastMode = fastMode,
+                    onFastModeChange = { fastMode = it },
+                    previousEnabled = previousOpeningId != null,
+                    nextEnabled = nextOpeningId != null,
+                    position = if (currentIndex >= 0) currentIndex + 1 else 1,
+                    total = siblingOpenings.size.coerceAtLeast(1),
+                    onPrevious = {
+                        previousOpeningId?.let { id ->
+                            vm.saveOpeningDraft(projectId, buildOpening())
+                            onNavigateOpening(id)
+                        }
+                    },
+                    onNext = {
+                        nextOpeningId?.let { id ->
+                            vm.saveOpeningDraft(projectId, buildOpening())
+                            onNavigateOpening(id)
+                        }
+                    }
+                )
+            }
+
             item {
                 SectionCard("Estado") {
                     Row(
@@ -1232,7 +1505,7 @@ fun OpeningScreen(
                 }
             }
 
-            item {
+            if (!fastMode) item {
                 SectionCard("Identificación") {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
@@ -1262,7 +1535,7 @@ fun OpeningScreen(
                 }
             }
 
-            item {
+            if (!fastMode) item {
                 SectionCard("Encuentros / holguras · mm") {
                     NumericPair("Izquierda", left, { left = it; savedFlash = false }, "Derecha", right, { right = it; savedFlash = false })
                     NumericPair("Superior", top, { top = it; savedFlash = false }, "Inferior", bottom, { bottom = it; savedFlash = false })
@@ -1287,7 +1560,7 @@ fun OpeningScreen(
                 }
             }
 
-            item {
+            if (!fastMode) item {
                 SectionCard("Condiciones de obra") {
                     OutlinedTextField(
                         value = direction,
@@ -1314,6 +1587,27 @@ fun OpeningScreen(
                 }
             }
 
+
+            if (fastMode) item {
+                SectionCard("Observaciones rápidas") {
+                    OutlinedTextField(
+                        value = interference,
+                        onValueChange = { interference = it; savedFlash = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Interferencias / obstáculos") },
+                        minLines = 2
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it; savedFlash = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Comentarios") },
+                        minLines = 2
+                    )
+                }
+            }
+
             item {
                 SectionCard("Evidencia fotográfica · ${evidence.size}") {
                     if (evidence.isEmpty()) {
@@ -1331,19 +1625,6 @@ fun OpeningScreen(
                 }
             }
 
-            item {
-                Button(
-                    onClick = {
-                        val updated = buildOpening()
-                        opening = updated
-                        vm.saveOpening(projectId, updated)
-                        savedFlash = true
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Guardar relevamiento")
-                }
-            }
 
             item { Spacer(Modifier.height(80.dp)) }
         }
@@ -1357,6 +1638,84 @@ fun OpeningScreen(
                 showIncidenceDialog = false
             }
         )
+    }
+}
+
+@Composable
+private fun OpeningWorkflowCard(
+    done: Int,
+    progress: Float,
+    fastMode: Boolean,
+    onFastModeChange: (Boolean) -> Unit,
+    previousEnabled: Boolean,
+    nextEnabled: Boolean,
+    position: Int,
+    total: Int,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize()
+    ) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Flujo rápido", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "$done de 4 pasos esenciales completos",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    "${(progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp),
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Modo rápido", fontWeight = FontWeight.Medium)
+                    Text(
+                        if (fastMode) "Muestra solo lo esencial para avanzar en obra." else "Muestra todos los campos técnicos.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = fastMode, onCheckedChange = onFastModeChange)
+            }
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = onPrevious, enabled = previousEnabled) { Text("← Anterior") }
+                Text(
+                    "$position / $total",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                OutlinedButton(onClick = onNext, enabled = nextEnabled) { Text("Siguiente →") }
+            }
+            AnimatedVisibility(visible = fastMode) {
+                Text(
+                    "Secuencia sugerida: medidas → controles → foto → marcar como relevado.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
     }
 }
 
@@ -2394,20 +2753,48 @@ private fun NewOpeningDialog(
     onSave: (String, String) -> Unit
 ) {
     var code by remember(initialCode) { mutableStateOf(initialCode) }
-    var type by remember { mutableStateOf("VANO") }
+    var type by remember { mutableStateOf("VENTANA") }
+    val presets = listOf("VENTANA", "PUERTA", "PAÑO FIJO", "OTRO")
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Nuevo vano") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(code, { code = it }, label = { Text("Código") }, singleLine = true)
-                OutlinedTextField(type, { type = it }, label = { Text("Tipo (ventana, puerta, paño fijo…)") })
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    code,
+                    { code = it },
+                    label = { Text("Código") },
+                    singleLine = true,
+                    supportingText = { Text("Se propone automáticamente; podés cambiarlo.") }
+                )
+                Text("Tipo de vano", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    presets.forEach { preset ->
+                        FilterChip(
+                            selected = if (preset == "OTRO") type !in presets.dropLast(1) else type == preset,
+                            onClick = { type = if (preset == "OTRO") "" else preset },
+                            label = { Text(preset) }
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    type,
+                    { type = it.uppercase() },
+                    label = { Text("Tipo") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
         confirmButton = {
-            Button(enabled = code.isNotBlank(), onClick = { onSave(code, type) }) { Text("Crear y abrir") }
+            Button(enabled = code.isNotBlank() && type.isNotBlank(), onClick = { onSave(code, type) }) {
+                Text("Crear y abrir")
+            }
         }
     )
 }
@@ -2577,12 +2964,27 @@ private fun nextCheck(value: String): String = when (value) {
 
 @Composable
 private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    ElevatedCard(Modifier.fillMaxWidth()) {
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(),
+        shape = MaterialTheme.shapes.large
+    ) {
         Column(
-            Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
         ) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Box(
+                    Modifier
+                        .size(7.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                )
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            }
             content()
         }
     }

@@ -3,11 +3,14 @@ package com.illu.relevametal.ui
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 import com.illu.relevametal.personalization.AppThemeMode
 import com.illu.relevametal.personalization.DEFAULT_ACCENT
 import com.illu.relevametal.personalization.PersonalizationSettings
@@ -41,6 +44,14 @@ private val DarkColors = darkColorScheme(
     surfaceVariant = Color(0xFF3F4946),
     outline = Color(0xFF89938F),
     error = Color(0xFFFFB4AB)
+)
+
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(22.dp),
+    extraLarge = RoundedCornerShape(28.dp)
 )
 
 private fun blend(from: Color, to: Color, amount: Float): Color {
@@ -84,6 +95,7 @@ fun GrupoIdeaTheme(
     val colors = withAccent(if (dark) DarkColors else LightColors, accent, dark)
     MaterialTheme(
         colorScheme = colors,
+        shapes = AppShapes,
         content = content
     )
 }
