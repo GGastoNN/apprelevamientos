@@ -166,6 +166,9 @@ private fun App(vm: AppViewModel) {
                 },
                 onDuplicated = { newOpeningId ->
                     screen = Screen.Opening(current.projectId, current.spaceId, newOpeningId)
+                },
+                onNavigateOpening = { openingId ->
+                    screen = Screen.Opening(current.projectId, current.spaceId, openingId)
                 }
             )
         }
