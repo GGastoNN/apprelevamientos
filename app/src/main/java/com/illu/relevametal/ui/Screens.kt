@@ -331,7 +331,7 @@ private fun DataTransferDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "Podés mover las obras completas a otro dispositivo con RelevaMetal. " +
+                    "Podés mover las obras completas a otro dispositivo con Grupo IDEA - Relevamientos. " +
                         "El archivo .gidea incluye espacios, vanos, medidas, controles, bitácora, fotos originales, cotas y anotaciones."
                 )
                 if (busy) {
