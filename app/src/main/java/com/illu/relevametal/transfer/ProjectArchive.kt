@@ -114,7 +114,7 @@ class ProjectArchiveManager(
         } else {
             "_todas_las_obras"
         }
-        val output = File(outDir, "RelevaMetal${label}_$stamp.gidea")
+        val output = File(outDir, "GrupoIDEA_Relevamientos${label}_$stamp.gidea")
 
         ZipOutputStream(BufferedOutputStream(FileOutputStream(output))).use { zip ->
             // JPEG/HEIC files are already compressed; BEST_SPEED avoids wasting CPU on them.
@@ -140,9 +140,9 @@ class ProjectArchiveManager(
         try {
             extractSafely(uri, staging)
             val manifestFile = File(staging, MANIFEST)
-            require(manifestFile.isFile) { "El archivo no contiene un manifiesto de RelevaMetal" }
+            require(manifestFile.isFile) { "El archivo no contiene un manifiesto válido de Grupo IDEA - Relevamientos" }
             val root = JSONObject(manifestFile.readText(Charsets.UTF_8))
-            require(root.optString("format") == FORMAT) { "El archivo seleccionado no es un respaldo válido de RelevaMetal" }
+            require(root.optString("format") == FORMAT) { "El archivo seleccionado no es un archivo .gidea válido de Grupo IDEA - Relevamientos" }
             val version = root.optInt("formatVersion", -1)
             require(version in 1..FORMAT_VERSION) {
                 "Este respaldo usa una versión de datos más nueva. Actualizá la aplicación antes de importarlo."
